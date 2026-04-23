@@ -1,0 +1,78 @@
+{
+  "legal_name": [
+    "Legal Name"
+  ],
+  "dba_name": [
+    "DBA Name",
+    "DBA",
+    "Merchant Name"
+  ],
+  "street_address": [
+    "Street address",
+    "Street Address",
+    "Address"
+  ],
+  "city": [
+    "City"
+  ],
+  "state": [
+    "State"
+  ],
+  "zip": [
+    "ZIP",
+    "Zip",
+    "Postal Code"
+  ],
+  "customer_service_phone": [
+    "Customer service phone number",
+    "Customer Service Phone Number"
+  ],
+  "merchant_id": [
+    "Merchant ID",
+    "MID"
+  ],
+  "merchant_number": [
+    "Merchant Number",
+    "Merchant number"
+  ],
+  "bin": [
+    "BIN"
+  ],
+  "base_identification_number": [
+    "Base Identification Number",
+    "BIN"
+  ],
+  "vin": [
+    "VIN Number",
+    "VIN",
+    "V Number"
+  ],
+  "mcc": [
+    "MCC"
+  ],
+  "chain": [
+    "Chain"
+  ],
+  "agent_bank": [
+    "Agent Bank"
+  ],
+  "store_number": [
+    "Store Number"
+  ],
+  "terminal_number": [
+    "Terminal Number"
+  ],
+  "location_number": [
+    "Location Number"
+  ],
+  "card_types_accepted": [
+    "Card Types Accepted"
+  ],
+  "approved_monthly_volume": [
+    "Approved Monthly Volume"
+  ],
+  "timezone": [
+    "Time Zone",
+    "Timezone"
+  ]
+}

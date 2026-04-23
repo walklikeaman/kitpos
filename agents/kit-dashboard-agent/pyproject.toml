@@ -1,0 +1,43 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kit-dashboard-agent"
+version = "0.1.0"
+description = "KIT Dashboard Agent - Merchant onboarding automation"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{name = "Your Team", email = "your-email@example.com"}]
+license = {text = "MIT"}
+
+dependencies = [
+    "python-dotenv>=1.0.0,<2",
+    "typer>=0.9,<1",
+    "pydantic>=2.0,<3",
+    "pdfplumber>=0.10,<1",
+    "pillow>=10,<11",
+    "pytesseract>=0.3,<1",
+]
+
+[project.optional-dependencies]
+ocr = [
+    "easyocr>=1.7,<2",
+    "pillow>=10,<11",
+    "pytesseract>=0.3,<1",
+]
+browser = [
+    "playwright>=1.40,<2",
+    "playwright-stealth>=1.0,<2",
+]
+dev = [
+    "pytest>=7,<8",
+    "pytest-asyncio>=0.21,<1",
+    "ruff>=0.1,<1",
+]
+
+[project.scripts]
+kit = "kit_agent.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kit_agent"]
