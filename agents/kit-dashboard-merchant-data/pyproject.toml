@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kit-dashboard-merchant-data"
+version = "0.1.0"
+description = "KIT Dashboard – lookup merchant principal name and phone by ID or name"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{name = "Maverick Developer", email = "nakonechnyi.n@gmail.com"}]
+license = {text = "MIT"}
+
+dependencies = [
+    "python-dotenv>=1.0.0,<2",
+    "typer>=0.9,<1",
+    "playwright>=1.40,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7,<8",
+    "pytest-asyncio>=0.21,<1",
+]
+
+[project.scripts]
+merchant = "merchant_data.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/merchant_data"]
