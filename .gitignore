@@ -76,6 +76,14 @@ agents/kit-dashboard-agent/tmp/
 agents/kit-dashboard-agent/logs/
 agents/kit-dashboard-agent/.env.local
 
+# Amazon Purchase Agent
+agents/amazon-purchase-agent/tmp/
+agents/amazon-purchase-agent/logs/
+agents/amazon-purchase-agent/debug/
+agents/amazon-purchase-agent/amazon_session.json
+agents/amazon-purchase-agent/*.json
+agents/amazon-purchase-agent/.env.local
+
 # OS
 .DS_Store
 .AppleDouble

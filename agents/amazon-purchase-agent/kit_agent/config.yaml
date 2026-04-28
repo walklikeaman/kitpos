@@ -1,0 +1,208 @@
+# KIT Dashboard Onboarding Agent — Configuration
+# All runtime defaults live here. No hard-coded values in code.
+# Override anything via environment variables (see .env.example).
+
+kit_dashboard:
+  base_url: https://kitdashboard.com
+  login_path: /site/login
+  campaign_search_path: /boarding/campaign/search
+  application_list_path: /boarding/default/index
+  application_modify_path: /boarding/default/modify
+  attachment_upload_path: /attachment/upload
+  attachment_add_path: /boarding/attachment/add
+  attachment_modify_path: /boarding/attachment/modify
+  attachment_list_path: /boarding/attachment/list
+  attachment_grouped_path: /boarding/attachment/get-grouped-attachments
+  upload_token_path: /boarding/default/get-upload-token
+  zip_search_path: /zip/search
+  zip_city_path: /zip/city
+  mcc_search_path: /system/mcc/search
+  business_owner_new_path: /boarding/business-owner/get-new
+
+  # HTTP headers sent with every API request
+  default_headers:
+    X-Requested-With: XMLHttpRequest
+    Accept: application/json, text/plain, */*
+
+  # Max retries per API call before giving up
+  max_retries: 3
+  retry_delay_seconds: 2
+  request_timeout_seconds: 30
+
+# Campaign to use when creating new applications
+campaign:
+  search_query: "KIT POS"
+  target_name: "Kit POS InterCharge Plus"
+
+# Step 6 — Deployment defaults
+deployment:
+  equipment: KIT POS
+  equipment_provided_by: ISO
+
+# Step 8 — DBA defaults
+dba:
+  same_as_legal: "No"
+  building_type: Office Building
+  ownership: Rent
+  zoned: Commercial
+  size_sqft: "500"  # minimum of 500-1500 range
+
+# Step 9 — Principal defaults
+principal:
+  nationality: United States
+  ownership_percent: 100
+  # Title mapping by entity type
+  title_by_entity:
+    Corporation: CEO
+    LLC: CEO
+    Individual: Owner
+    Partnership: Partner
+    Government: Director
+    Non-Profit: Director
+    Publicly-Traded: CEO
+
+# Step 11 — Payment Information defaults
+payment:
+  accept_cards: "No"
+  monthly_volume: 50000
+  average_ticket: 50
+  max_ticket: 500
+  cards_accepted:
+    - Visa
+    - MasterCard
+    - Discover
+    - Amex
+    - PIN Debit
+  default_industry: Grocery Store
+  default_mcc_code: "5411"
+  refund_policy: "No refund, no return"
+  software: KITPOS
+
+# Step 12 — Business Profile defaults
+business_profile:
+  seasonal: false
+  customer_type_individual_pct: 100
+  customer_location_local_pct: 100
+  fulfillment_hours: 24
+
+# Document categories for attachment upload
+document_categories:
+  voided_check: voided-check
+  driver_license: driver-license
+  bank_statement: bank-statement
+  processing_statement: processing-statement
+  corporation_documents: corporation-documents
+
+# State codes → IDs on KIT Dashboard (dynamically fetched when missing)
+state_ids:
+  AL: 1
+  AK: 2
+  AZ: 3
+  AR: 4
+  CA: 5
+  CO: 6
+  CT: 7
+  DE: 8
+  FL: 9
+  GA: 10
+  HI: 11
+  ID: 12
+  IL: 13
+  IN: 14
+  IA: 15
+  KS: 16
+  KY: 17
+  LA: 18
+  ME: 19
+  MD: 20
+  MA: 21
+  MI: 22
+  MN: 23
+  MS: 24
+  MO: 25
+  MT: 26
+  NE: 27
+  NV: 28
+  NH: 29
+  NJ: 30
+  NM: 31
+  NY: 32
+  NC: 33
+  ND: 34
+  OH: 35
+  OK: 36
+  OR: 37
+  PA: 38
+  RI: 39
+  SC: 40
+  SD: 41
+  TN: 42
+  TX: 43
+  UT: 44
+  VT: 45
+  VA: 46
+  WA: 47
+  WV: 48
+  WI: 49
+  WY: 50
+  DC: 51
+
+# Extraction rules — what to look for in each document type
+extraction:
+  application_form:
+    fields:
+      - business_name_dba
+      - legal_name
+      - entity_type
+      - business_address
+      - city
+      - state
+      - zip
+      - email
+      - phone_owner          # From Owner's Information section specifically
+      - ein                  # Federal Tax ID / EIN
+      - ssn
+      - dob
+      - founded_date
+      - refund_policy
+      - industry
+
+  driver_license:
+    fields:
+      - dl_number
+      - dl_expiration
+      - first_name
+      - last_name
+      - home_address         # Residential address — different from business
+      - home_city
+      - home_state
+      - home_zip
+      - dob                  # Cross-check with application
+
+  voided_check:
+    fields:
+      - routing_number       # 9 digits — always from MICR line at bottom
+      - account_number       # 10-12 digits — from MICR line
+      - bank_name
+    micr_line_instructions: |
+      Read ONLY from the MICR line at the very bottom of the check.
+      Format: ⑆ROUTING⑆ ACCOUNT ⑈ CHECK_NUMBER
+      Routing = 9 digits between first two transit symbols.
+      Account = digits between second transit symbol and check symbol.
+      DO NOT read numbers from check header or body.
+
+# Validation rules
+validation:
+  ein:
+    digits: 9
+    must_not_equal_ssn: true
+  ssn:
+    digits: 9
+  routing_number:
+    digits: 9
+  account_number:
+    min_digits: 8
+    max_digits: 17
+  phone:
+    digits: 10
+    format: "XXX-XXX-XXXX"
