@@ -2,20 +2,30 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 from dataclasses import dataclass
 from getpass import getpass
 from pathlib import Path
+import sys
 
+from dotenv import load_dotenv
 from playwright.async_api import Locator
 from playwright.async_api import Page
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from playwright.async_api import async_playwright
 
 from maverick_agent.parsers.var_pdf import VarPdfParser
+from maverick_agent.config import Settings
+from maverick_agent.services.inbox import ImapInboxClient
 
 
 LOGIN_URL = "https://auth.paxstore.us/passport/login?client_id=admin&market=paxus"
 SCREENSHOT_DIR = Path("tmp/screenshots")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = PROJECT_ROOT.parents[1]
+KIT_DASHBOARD_AGENT_DIR = REPO_ROOT / "agents" / "kit-dashboard-merchant-data"
+DEFAULT_VAR_DOWNLOAD_DIR = PROJECT_ROOT / "downloads"
+PINPAD_MODELS_WITH_BACK_SCREEN = {"A3700", "3700"}
 
 
 @dataclass(slots=True)
@@ -69,6 +79,23 @@ class PaxProvisioningData:
             mcc=fields.get("mcc", ""),
             terminal_id_number=fields["terminal_id_number"],
         )
+
+
+@dataclass(slots=True)
+class TerminalDevice:
+    role: str
+    serial_number: str
+    expected_model: str | None = None
+    install_back_screen: bool | None = None
+
+    def display_name(self, data: PaxProvisioningData) -> str:
+        return f"{data.dba_name} {self.serial_number}"
+
+    def needs_back_screen(self) -> bool:
+        if self.install_back_screen is not None:
+            return self.install_back_screen
+        model = (self.expected_model or "").upper().replace("PAX", "").strip()
+        return model in PINPAD_MODELS_WITH_BACK_SCREEN
 
 
 async def snapshot(page: Page, name: str) -> str:
@@ -221,26 +248,27 @@ async def select_merchant(page: Page, merchant_display_name: str) -> None:
     await snapshot(page, "05-selected-merchant")
 
 
-async def add_terminal(page: Page, data: PaxProvisioningData, submit: bool) -> None:
+async def add_terminal(page: Page, data: PaxProvisioningData, device: TerminalDevice, submit: bool) -> None:
     await select_merchant(page, data.merchant_display_name)
     await click_button_by_text_or_label(page, "TERMINAL")
     await page.wait_for_timeout(1500)
 
-    await page.locator("#name").fill(data.terminal_display_name)
+    await page.locator("#name").fill(device.display_name(data))
     await page.get_by_text("Immediately", exact=True).click()
-    await page.locator("#serialNo").fill(data.serial_number)
+    await page.locator("#serialNo").fill(device.serial_number)
     await page.wait_for_timeout(3500)
-    before_text = await snapshot(page, "06-before-add-terminal")
+    before_text = await snapshot(page, f"06-before-add-{device.role}-terminal")
 
-    if "PAX" not in before_text or "A35" not in before_text:
-        print("warning: expected manufacturer/model PAX A35 was not visible before submit")
+    if "PAX" not in before_text or (device.expected_model and device.expected_model not in before_text):
+        expected = f"PAX {device.expected_model}" if device.expected_model else "PAX"
+        print(f"warning: expected manufacturer/model {expected} was not visible before submit")
 
     if not submit:
         return
 
     await click_last_visible_ok(page)
     await page.wait_for_timeout(5000)
-    after_text = await snapshot(page, "07-after-add-terminal")
+    after_text = await snapshot(page, f"07-after-add-{device.role}-terminal")
     duplicate_markers = [
         "has been registered",
         "already",
@@ -249,10 +277,28 @@ async def add_terminal(page: Page, data: PaxProvisioningData, submit: bool) -> N
         "duplicate",
     ]
     if any(marker.lower() in after_text.lower() for marker in duplicate_markers):
-        print("terminal-create-result=duplicate-or-existing")
+        print(f"{device.role}-terminal-create-result=duplicate-or-existing")
         return
-    if data.terminal_display_name not in after_text and data.serial_number not in after_text:
+    if device.display_name(data) not in after_text and device.serial_number not in after_text:
         raise RuntimeError("Terminal creation result was unclear; inspect 07-after-add-terminal screenshot/text")
+
+
+async def select_terminal(page: Page, data: PaxProvisioningData, device: TerminalDevice) -> None:
+    await select_merchant(page, data.merchant_display_name)
+    terminal_name = device.display_name(data)
+    for locator in (
+        page.get_by_text(terminal_name, exact=True).first,
+        page.get_by_text(device.serial_number, exact=False).first,
+    ):
+        try:
+            if await locator.is_visible(timeout=2500):
+                await locator.click()
+                await page.wait_for_timeout(2500)
+                await snapshot(page, f"selected-{device.role}-terminal")
+                return
+        except PlaywrightTimeoutError:
+            continue
+    raise RuntimeError(f"Could not select {device.role} terminal: {terminal_name}")
 
 
 async def open_push_task(page: Page) -> None:
@@ -284,18 +330,34 @@ async def push_latest_firmware(page: Page, submit: bool) -> None:
     await snapshot(page, "10-after-firmware-push")
 
 
-async def push_tsys_app(page: Page, data: PaxProvisioningData, submit: bool) -> None:
+async def activate_current_task(page: Page, snapshot_name: str) -> None:
+    await page.get_by_role("button", name="ACTIVATE").click()
+    await page.wait_for_timeout(1000)
+    await click_last_visible_ok(page)
+    await page.wait_for_timeout(3000)
+    await snapshot(page, snapshot_name)
+
+
+async def push_named_app(
+    page: Page,
+    *,
+    query: str,
+    app_name: str,
+    submit: bool,
+    activate: bool,
+    snapshot_prefix: str,
+) -> None:
     await page.get_by_role("button", name="Push App").click()
     await page.wait_for_timeout(1500)
     await click_button_by_text_or_label(page, "Add App")
     await page.wait_for_timeout(1500)
 
     search = page.locator("#Search, div.dialog_section_head input").first
-    await search.fill("tsys")
+    await search.fill(query)
     await page.keyboard.press("Enter")
     await page.wait_for_timeout(2500)
-    await snapshot(page, "11-app-search-tsys")
-    await click_button_by_text_or_label(page, "BroadPOS TSYS Sierra")
+    await snapshot(page, f"{snapshot_prefix}-app-search")
+    await click_button_by_text_or_label(page, app_name)
     await page.wait_for_timeout(1000)
 
     close_button = page.get_by_role("button", name="CLOSE")
@@ -308,8 +370,29 @@ async def push_tsys_app(page: Page, data: PaxProvisioningData, submit: bool) -> 
 
     first_checkbox = page.locator("tbody tr").first.locator("input[type='checkbox']").first
     await first_checkbox.click()
+    await snapshot(page, f"{snapshot_prefix}-before-app-ok")
+    if not submit:
+        return
+
     await click_last_visible_ok(page)
     await page.wait_for_timeout(2500)
+    await snapshot(page, f"{snapshot_prefix}-after-app-ok")
+
+    if activate:
+        await activate_current_task(page, f"{snapshot_prefix}-after-app-activate")
+
+
+async def push_tsys_app(page: Page, data: PaxProvisioningData, submit: bool, activate_payment_app: bool) -> None:
+    await push_named_app(
+        page,
+        query="tsys",
+        app_name="BroadPOS TSYS Sierra",
+        submit=submit,
+        activate=False,
+        snapshot_prefix="11-tsys",
+    )
+    if not submit:
+        return
 
     await page.get_by_role("button", name="Push Template").click()
     await page.wait_for_timeout(1000)
@@ -327,6 +410,8 @@ async def push_tsys_app(page: Page, data: PaxProvisioningData, submit: bool) -> 
         await page.get_by_role("button", name="NEXT").click()
         await page.wait_for_timeout(3000)
         await snapshot(page, "13-after-tsys-next")
+        if activate_payment_app:
+            await activate_current_task(page, "14-after-tsys-activate")
 
 
 async def fill_by_id(page: Page, field_id: str, value: str) -> None:
@@ -362,26 +447,352 @@ async def fill_tsys_parameters(page: Page, data: PaxProvisioningData) -> None:
 
 
 def parse_steps(raw_steps: str) -> set[str]:
-    if raw_steps == "all":
+    if raw_steps in {"all", "single-all"}:
         return {"merchant", "terminal", "firmware", "tsys"}
+    if raw_steps == "two-device":
+        return {"merchant", "terminals", "pos-apps", "pinpad-apps"}
     return {step.strip() for step in raw_steps.split(",") if step.strip()}
 
 
+def make_data_for_device(data: PaxProvisioningData, device: TerminalDevice) -> PaxProvisioningData:
+    return PaxProvisioningData(
+        dba_name=data.dba_name,
+        merchant_number=data.merchant_number,
+        serial_number=device.serial_number,
+        merchant_display_name=data.merchant_display_name,
+        terminal_display_name=device.display_name(data),
+        bin=data.bin,
+        agent_bank=data.agent_bank,
+        chain=data.chain,
+        store_number=data.store_number,
+        terminal_number=data.terminal_number,
+        city=data.city,
+        state=data.state,
+        zip=data.zip,
+        mcc=data.mcc,
+        terminal_id_number=data.terminal_id_number,
+        timezone_query=data.timezone_query,
+        timezone_option=data.timezone_option,
+    )
+
+
+async def download_var_from_kit_dashboard(
+    merchant_number: str,
+    *,
+    settings: Settings,
+    save_dir: Path,
+    headed: bool,
+    verification_code: str | None,
+) -> Path | None:
+    if not settings.kit_dashboard_email or not settings.kit_dashboard_password:
+        return None
+    if not KIT_DASHBOARD_AGENT_DIR.exists():
+        return None
+
+    sys.path.insert(0, str(KIT_DASHBOARD_AGENT_DIR / "src"))
+    from merchant_data.models import KitCredentials
+    from merchant_data.services.kit_merchant_lookup import MerchantLookupService
+
+    credentials = KitCredentials(
+        email=settings.kit_dashboard_email,
+        password=settings.kit_dashboard_password,
+        base_url=settings.kit_dashboard_url,
+        storage_state=PROJECT_ROOT / settings.kit_dashboard_storage_state,
+        verification_code=verification_code,
+    )
+    service = MerchantLookupService(
+        credentials,
+        headless=not headed,
+        debug_dir=PROJECT_ROOT / "tmp" / "kit-dashboard-debug",
+    )
+    print(f"Resolving VAR from Kit Dashboard for Merchant Number {merchant_number}...", flush=True)
+    result = await asyncio.wait_for(service.download_var_by_id(merchant_number, save_dir), timeout=120)
+    return result.saved_path
+
+
+def download_var_from_email(merchant_number: str, *, settings: Settings) -> Path | None:
+    if (
+        settings.mail_provider != "imap"
+        or not settings.mail_imap_host
+        or not settings.mail_username
+        or not settings.mail_password
+    ):
+        return None
+
+    inbox = ImapInboxClient(
+        host=settings.mail_imap_host,
+        port=settings.mail_imap_port,
+        username=settings.mail_username,
+        password=settings.mail_password,
+        mailbox=settings.mail_imap_mailbox,
+        scan_limit=settings.mail_scan_limit,
+    )
+    attachment = inbox.find_latest_var_pdf(merchant_number)
+    return attachment.path if attachment else None
+
+
+async def resolve_var_pdf(args: argparse.Namespace, settings: Settings) -> Path:
+    if args.pdf:
+        return args.pdf
+    if not args.merchant_number:
+        raise RuntimeError("--merchant-number is required when --pdf is not provided")
+
+    sources = ["kit-dashboard", "email"] if args.var_source == "auto" else [args.var_source]
+    last_errors: list[str] = []
+    for source in sources:
+        try:
+            if source == "kit-dashboard":
+                path = await download_var_from_kit_dashboard(
+                    args.merchant_number,
+                    settings=settings,
+                    save_dir=args.var_download_dir,
+                    headed=args.headed,
+                    verification_code=args.kit_verification_code,
+                )
+            elif source == "email":
+                path = download_var_from_email(args.merchant_number, settings=settings)
+            else:
+                path = None
+            if path:
+                print(f"VAR PDF resolved from {source}: {path}")
+                return path
+        except TimeoutError:
+            last_errors.append(
+                f"{source}: timed out while resolving VAR PDF. If KIT Dashboard requested 2FA, rerun with --kit-verification-code."
+            )
+        except Exception as exc:
+            last_errors.append(f"{source}: {exc}")
+
+    details = "; ".join(last_errors) if last_errors else "no configured source returned a PDF"
+    raise RuntimeError(f"Could not resolve VAR PDF for Merchant Number {args.merchant_number}: {details}")
+
+
+async def provision_single_terminal(
+    page: Page,
+    data: PaxProvisioningData,
+    *,
+    steps: set[str],
+    submit: bool,
+    activate_payment_app: bool,
+) -> None:
+    device = TerminalDevice(role="single", serial_number=data.serial_number)
+    if "merchant" in steps:
+        await add_merchant(page, data, submit)
+    if "terminal" in steps:
+        await add_terminal(page, data, device, submit)
+    if "firmware" in steps or "tsys" in steps:
+        await select_terminal(page, data, device)
+        await open_push_task(page)
+    if "firmware" in steps:
+        await push_latest_firmware(page, submit)
+    if "tsys" in steps:
+        await push_tsys_app(page, data, submit, activate_payment_app)
+
+
+async def provision_two_device_workflow(
+    page: Page,
+    data: PaxProvisioningData,
+    *,
+    pos_device: TerminalDevice,
+    pinpad_device: TerminalDevice,
+    steps: set[str],
+    submit: bool,
+    activate_payment_app: bool,
+) -> None:
+    if "merchant" in steps:
+        await add_merchant(page, data, submit)
+    if "terminals" in steps:
+        await add_terminal(page, data, pos_device, submit)
+        await add_terminal(page, data, pinpad_device, submit)
+
+    if "pos-apps" in steps:
+        await select_terminal(page, data, pos_device)
+        await open_push_task(page)
+        await push_latest_firmware(page, submit)
+        await push_named_app(
+            page,
+            query="kit stock",
+            app_name="KIT Stock",
+            submit=submit,
+            activate=True,
+            snapshot_prefix="pos-kit-stock",
+        )
+        await push_named_app(
+            page,
+            query="kit merchant",
+            app_name="KIT Merchant",
+            submit=submit,
+            activate=True,
+            snapshot_prefix="pos-kit-merchant",
+        )
+
+    if "pinpad-apps" in steps:
+        pinpad_data = make_data_for_device(data, pinpad_device)
+        await select_terminal(page, pinpad_data, pinpad_device)
+        await open_push_task(page)
+        await push_latest_firmware(page, submit)
+        if pinpad_device.needs_back_screen():
+            await push_named_app(
+                page,
+                query="kit back screen",
+                app_name="KIT Back Screen",
+                submit=submit,
+                activate=True,
+                snapshot_prefix="pinpad-kit-back-screen",
+            )
+        await push_tsys_app(page, pinpad_data, submit, activate_payment_app)
+
+
+def build_plan_summary(
+    data: PaxProvisioningData,
+    *,
+    pdf_path: Path,
+    pos_device: TerminalDevice | None,
+    pinpad_device: TerminalDevice | None,
+    steps: set[str],
+    activate_payment_app: bool,
+) -> dict:
+    summary = {
+        "pdf_path": str(pdf_path),
+        "merchant_display_name": data.merchant_display_name,
+        "merchant_number": data.merchant_number,
+        "dba_name": data.dba_name,
+        "steps": sorted(steps),
+        "var_numbers": {
+            "bin": data.bin,
+            "agent_bank": data.agent_bank,
+            "chain": data.chain,
+            "merchant_number": data.merchant_number,
+            "store_number": data.store_number,
+            "terminal_number": data.terminal_number,
+            "city": data.city,
+            "state": data.state,
+            "city_code_zip": data.zip,
+            "mcc": data.mcc,
+            "terminal_id_number": data.terminal_id_number,
+            "timezone": data.timezone_option,
+        },
+        "payment_app_activation": "activate" if activate_payment_app else "leave_pending_for_review",
+    }
+    devices = []
+    if pos_device:
+        devices.append(
+            {
+                "role": "pos",
+                "serial_number": pos_device.serial_number,
+                "expected_model": pos_device.expected_model,
+                "terminal_name": pos_device.display_name(data),
+                "firmware": "latest_before_apps",
+                "apps": ["KIT POS (expected automatic)", "KIT Stock", "KIT Merchant"],
+                "activate_apps": True,
+            }
+        )
+    if pinpad_device:
+        pinpad_apps = ["BroadPOS TSYS Sierra"]
+        if pinpad_device.needs_back_screen():
+            pinpad_apps.insert(0, "KIT Back Screen")
+        devices.append(
+            {
+                "role": "pinpad",
+                "serial_number": pinpad_device.serial_number,
+                "expected_model": pinpad_device.expected_model,
+                "terminal_name": pinpad_device.display_name(data),
+                "firmware": "latest_before_apps",
+                "apps": pinpad_apps,
+                "tsys_template": "Parameter File:retail.zip",
+                "activate_payment_app": activate_payment_app,
+            }
+        )
+    if not devices:
+        devices.append(
+            {
+                "role": "single",
+                "serial_number": data.serial_number,
+                "terminal_name": data.terminal_display_name,
+            }
+        )
+    summary["devices"] = devices
+    return summary
+
+
 async def main() -> None:
-    parser = argparse.ArgumentParser(description="Provision PAX merchant, terminal, and TSYS push task from a VAR PDF.")
-    parser.add_argument("--pdf", required=True, type=Path)
-    parser.add_argument("--serial-number", required=True)
+    load_dotenv()
+    load_dotenv(KIT_DASHBOARD_AGENT_DIR / ".env")
+    parser = argparse.ArgumentParser(description="Provision PAX merchant, terminal, and app push tasks from a VAR PDF.")
+    parser.add_argument("--pdf", type=Path)
+    parser.add_argument("--merchant-number", help="Merchant Number used to find/download the VAR PDF when --pdf is omitted.")
+    parser.add_argument("--serial-number", help="Legacy single-device serial number.")
+    parser.add_argument("--pos-serial", help="POS serial number for the two-device workflow.")
+    parser.add_argument("--pinpad-serial", help="PIN pad serial number for the two-device workflow.")
+    parser.add_argument("--pos-model", default="L1400")
+    parser.add_argument("--pinpad-model", default="A3700")
+    back_screen_group = parser.add_mutually_exclusive_group()
+    back_screen_group.add_argument(
+        "--pinpad-back-screen",
+        dest="pinpad_back_screen",
+        action="store_true",
+        help="Force installing KIT Back Screen on the PIN pad.",
+    )
+    back_screen_group.add_argument(
+        "--no-pinpad-back-screen",
+        dest="pinpad_back_screen",
+        action="store_false",
+        help="Do not install KIT Back Screen on the PIN pad.",
+    )
+    parser.set_defaults(pinpad_back_screen=None)
+    parser.add_argument("--var-source", choices=["auto", "kit-dashboard", "email"], default="auto")
+    parser.add_argument("--var-download-dir", type=Path, default=DEFAULT_VAR_DOWNLOAD_DIR)
+    parser.add_argument("--kit-verification-code", help="KIT Dashboard 2FA code when the session requires verification.")
     parser.add_argument(
         "--merchant-number-override",
         help="Optional override for the VAR Merchant Number. Normally this is read from the PDF.",
     )
-    parser.add_argument("--steps", default="merchant,terminal", help="Comma list: merchant,terminal,firmware,tsys or all.")
-    parser.add_argument("--submit", action="store_true", help="Actually click final OK/NEXT buttons. Without this, stops before submits.")
+    parser.add_argument(
+        "--steps",
+        default="merchant,terminal",
+        help="Comma list. Single-device: merchant,terminal,firmware,tsys/all. Two-device: merchant,terminals,pos-apps,pinpad-apps/two-device.",
+    )
+    parser.add_argument("--submit", action="store_true", help="Create PAX tasks. Without this, stops before final OK/NEXT buttons.")
+    parser.add_argument(
+        "--activate-payment-app",
+        action="store_true",
+        help="Activate BroadPOS TSYS Sierra after filling TSYS parameters. Default keeps it pending for review.",
+    )
+    parser.add_argument("--plan-only", action="store_true", help="Resolve/read VAR and print the workflow plan without opening PAX Store.")
     parser.add_argument("--headed", action="store_true")
     args = parser.parse_args()
 
-    data = PaxProvisioningData.from_pdf(args.pdf, args.serial_number, args.merchant_number_override)
+    settings = Settings.from_env()
+    pdf_path = await resolve_var_pdf(args, settings)
+    primary_serial = args.pinpad_serial or args.serial_number or args.pos_serial
+    if not primary_serial:
+        raise RuntimeError("Provide --serial-number for single-device mode or --pos-serial/--pinpad-serial for two-device mode")
+
+    data = PaxProvisioningData.from_pdf(pdf_path, primary_serial, args.merchant_number_override or args.merchant_number)
     steps = parse_steps(args.steps)
+    pos_device = TerminalDevice("pos", args.pos_serial, args.pos_model) if args.pos_serial else None
+    pinpad_device = (
+        TerminalDevice("pinpad", args.pinpad_serial, args.pinpad_model, args.pinpad_back_screen)
+        if args.pinpad_serial
+        else None
+    )
+    if args.plan_only:
+        print(
+            json.dumps(
+                build_plan_summary(
+                    data,
+                    pdf_path=pdf_path,
+                    pos_device=pos_device,
+                    pinpad_device=pinpad_device,
+                    steps=steps,
+                    activate_payment_app=args.activate_payment_app,
+                ),
+                indent=2,
+                ensure_ascii=True,
+            )
+        )
+        return
+
     username = input("PAX username: ").strip()
     password = getpass("PAX password: ")
 
@@ -393,16 +804,24 @@ async def main() -> None:
 
         await login(page, username, password)
         await open_terminal_management(page)
-        if "merchant" in steps:
-            await add_merchant(page, data, args.submit)
-        if "terminal" in steps:
-            await add_terminal(page, data, args.submit)
-        if "firmware" in steps or "tsys" in steps:
-            await open_push_task(page)
-        if "firmware" in steps:
-            await push_latest_firmware(page, args.submit)
-        if "tsys" in steps:
-            await push_tsys_app(page, data, args.submit)
+        if args.pos_serial and args.pinpad_serial:
+            await provision_two_device_workflow(
+                page,
+                data,
+                pos_device=pos_device,
+                pinpad_device=pinpad_device,
+                steps=steps,
+                submit=args.submit,
+                activate_payment_app=args.activate_payment_app,
+            )
+        else:
+            await provision_single_terminal(
+                page,
+                data,
+                steps=steps,
+                submit=args.submit,
+                activate_payment_app=args.activate_payment_app,
+            )
 
         await context.close()
         await browser.close()

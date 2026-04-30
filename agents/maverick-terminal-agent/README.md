@@ -102,6 +102,28 @@ python scripts/paxstore_provision_from_pdf.py \
   --submit
 ```
 
+Two-device merchant flow. The runner resolves the VAR PDF from Kit Dashboard
+first, falls back to email when configured, then creates/plans POS and PIN pad
+tasks:
+
+```bash
+python scripts/paxstore_provision_from_pdf.py \
+  --merchant-number 201100306001 \
+  --pos-serial 2630132073 \
+  --pinpad-serial 2620079273 \
+  --pos-model L1400 \
+  --pinpad-model A3700 \
+  --steps two-device \
+  --plan-only
+```
+
+Rules in this flow:
+
+- POS gets latest firmware first, then `KIT Stock` and `KIT Merchant`; `KIT POS` is expected to be automatic.
+- PIN pad gets latest firmware first, then `BroadPOS TSYS Sierra`.
+- `KIT Back Screen` is installed only for supported PIN pad models, currently `A3700`/`3700`; use `--pinpad-back-screen` or `--no-pinpad-back-screen` to override.
+- BroadPOS TSYS Sierra loads `Parameter File:retail.zip`, fills VAR numbers, and stays pending unless `--activate-payment-app` is explicitly passed.
+
 The PAX Store runner reads Merchant Number and TSYS parameter values from the
 VAR PDF first, then fills the recorded browser flow. See
 `docs/PAXSTORE_RECORDED_FLOW.md` for the TSYS field mapping extracted from the

@@ -45,7 +45,7 @@ class Settings:
             openrouter_base_url=os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
             openrouter_model=os.getenv("OPENROUTER_MODEL", "openrouter/free"),
             kit_dashboard_url=os.getenv("KIT_DASHBOARD_URL", "https://kitdashboard.com/"),
-            kit_dashboard_email=os.getenv("KIT_DASHBOARD_EMAIL"),
-            kit_dashboard_password=os.getenv("KIT_DASHBOARD_PASSWORD"),
+            kit_dashboard_email=os.getenv("KIT_DASHBOARD_EMAIL") or os.getenv("KIT_EMAIL"),
+            kit_dashboard_password=os.getenv("KIT_DASHBOARD_PASSWORD") or os.getenv("KIT_PASSWORD"),
             kit_dashboard_storage_state=os.getenv("KIT_DASHBOARD_STORAGE_STATE", "tmp/kit-dashboard-state.json"),
         )

@@ -82,3 +82,25 @@ python scripts/paxstore_provision_from_pdf.py \
 ```
 
 Screenshots and extracted page text are written under `tmp/screenshots/`.
+
+## Two-Device Merchant Rules
+
+For merchants with a POS and a PIN pad, run `--steps two-device`.
+
+POS device:
+
+- Create terminal as `DBA + serial number`.
+- Push latest firmware before apps.
+- Do not manually install KIT POS when it is already queued automatically.
+- Push and activate `KIT Stock`.
+- Push and activate `KIT Merchant`.
+
+PIN pad:
+
+- Create terminal as `DBA + serial number`.
+- Push latest firmware before apps.
+- Install `KIT Back Screen` only when the model requires it. Current default: `A3700`/`3700` requires it; `A35` does not.
+- Push `BroadPOS TSYS Sierra`.
+- Load `Parameter File:retail.zip` before filling TSYS fields.
+- Fill TSYS fields from the VAR PDF.
+- Keep the BroadPOS TSYS Sierra task pending for review unless `--activate-payment-app` is explicitly passed.
