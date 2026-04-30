@@ -129,6 +129,12 @@ VAR PDF first, then fills the recorded browser flow. See
 `docs/PAXSTORE_RECORDED_FLOW.md` for the TSYS field mapping extracted from the
 browser recording.
 
+Every run appends a non-secret JSONL record to
+`tmp/run-history/paxstore_runs.jsonl`. Use it to compare successful and failed
+runs by mode (`headless`/`headed`), steps, device models, serial numbers,
+submit flags, PDF path, and final error/status. Screenshots and page text remain
+under `tmp/screenshots/`.
+
 ## Project Structure
 
 ```

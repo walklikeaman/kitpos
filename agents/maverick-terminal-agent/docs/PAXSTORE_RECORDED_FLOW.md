@@ -83,6 +83,11 @@ python scripts/paxstore_provision_from_pdf.py \
 
 Screenshots and extracted page text are written under `tmp/screenshots/`.
 
+Run history is appended to `tmp/run-history/paxstore_runs.jsonl`. The history is
+intentionally non-secret: it stores mode, steps, submit flags, PDF path, device
+serials/models, merchant display name, derived Terminal ID Number, status, and
+error text when a run fails.
+
 ## Two-Device Merchant Rules
 
 For merchants with a POS and a PIN pad, run `--steps two-device`.

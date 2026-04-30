@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from datetime import datetime
+from datetime import UTC
 import json
 from dataclasses import dataclass
 from getpass import getpass
@@ -21,6 +23,8 @@ from maverick_agent.services.inbox import ImapInboxClient
 
 LOGIN_URL = "https://auth.paxstore.us/passport/login?client_id=admin&market=paxus"
 SCREENSHOT_DIR = Path("tmp/screenshots")
+RUN_HISTORY_DIR = Path("tmp/run-history")
+RUN_HISTORY_FILE = RUN_HISTORY_DIR / "paxstore_runs.jsonl"
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 KIT_DASHBOARD_AGENT_DIR = REPO_ROOT / "agents" / "kit-dashboard-merchant-data"
@@ -156,6 +160,71 @@ async def click_button_by_text_or_label(page: Page, label: str) -> None:
         raise RuntimeError(f"Could not click item: {label}")
 
 
+async def click_button_or_text(page: Page, label: str) -> None:
+    locators = (
+        page.get_by_role("button", name=label).first,
+        page.get_by_role("tab", name=label).first,
+        page.get_by_text(label, exact=True).first,
+        page.get_by_text(label, exact=False).first,
+    )
+    for locator in locators:
+        try:
+            if await locator.is_visible(timeout=1500):
+                await locator.click()
+                return
+        except PlaywrightTimeoutError:
+            continue
+    await click_button_by_text_or_label(page, label)
+
+
+async def select_first_result_row(page: Page) -> None:
+    selected = await page.evaluate(
+        """() => {
+            const visible = (el) => {
+                const rect = el.getBoundingClientRect();
+                const style = window.getComputedStyle(el);
+                return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+            };
+            const checkboxes = Array.from(document.querySelectorAll('input[type="checkbox"]')).filter(visible);
+            if (checkboxes.length) {
+                checkboxes[0].click();
+                return 'checkbox';
+            }
+            const rows = Array.from(document.querySelectorAll('tbody tr, .el-table__row, tr')).filter((row) => {
+                const text = (row.innerText || '').trim();
+                return text
+                    && visible(row)
+                    && !/No data found/i.test(text)
+                    && !/Firmware Name\\s+Size\\s+Force Update/i.test(text)
+                    && !/App Name\\s+Version/i.test(text);
+            });
+            if (rows.length) {
+                const preferred = rows.find((row) => /Uniphiz_|KIT\\s|BroadPOS|TSYS|Sierra/i.test(row.innerText || '')) || rows[0];
+                preferred.scrollIntoView({block: 'center', inline: 'center'});
+                const rect = preferred.getBoundingClientRect();
+                const x = rect.left + 20;
+                const y = rect.top + rect.height / 2;
+                const clickable = document.elementFromPoint(x, y)
+                    || preferred.querySelector('td:first-child, label, span')
+                    || preferred;
+                for (const type of ['mouseover', 'mousedown', 'mouseup', 'click']) {
+                    clickable.dispatchEvent(new MouseEvent(type, {
+                        bubbles: true,
+                        cancelable: true,
+                        clientX: x,
+                        clientY: y,
+                        view: window,
+                    }));
+                }
+                return 'row';
+            }
+            return null;
+        }"""
+    )
+    if not selected:
+        raise RuntimeError("Could not select the first result row")
+
+
 async def ensure_checkbox_by_label(page: Page, label_text: str) -> None:
     checked = await page.evaluate(
         """(labelText) => {
@@ -183,7 +252,7 @@ async def click_last_visible_ok(page: Page) -> None:
                 return
         except PlaywrightTimeoutError:
             continue
-    raise RuntimeError("Could not find visible OK button")
+    await click_button_by_text_or_label(page, "OK")
 
 
 async def login(page: Page, username: str, password: str) -> None:
@@ -207,8 +276,16 @@ async def login(page: Page, username: str, password: str) -> None:
     await page.wait_for_timeout(5000)
     await click_if_visible(page, "text=NO, THANKS")
     await click_if_visible(page, "text=ACCEPT COOKIES")
+    for label in ("NO, THANKS", "ACCEPT COOKIES"):
+        try:
+            button = page.get_by_text(label, exact=False).first
+            if await button.is_visible(timeout=1000):
+                await button.click()
+                await page.wait_for_timeout(800)
+        except PlaywrightTimeoutError:
+            pass
     text = await snapshot(page, "01-after-login")
-    if "Terminal Management" not in text:
+    if "paxus.paxstore.us/admin" not in page.url and "Terminal Management" not in text:
         raise RuntimeError("Login did not reach the PAX admin page")
 
 
@@ -243,13 +320,35 @@ async def add_merchant(page: Page, data: PaxProvisioningData, submit: bool) -> N
 
 
 async def select_merchant(page: Page, merchant_display_name: str) -> None:
-    await page.get_by_text(merchant_display_name, exact=True).first.click()
+    locator = page.get_by_text(merchant_display_name, exact=True).first
+    try:
+        if await locator.is_visible(timeout=2500):
+            await locator.click()
+        else:
+            raise PlaywrightTimeoutError("merchant text is not visible")
+    except PlaywrightTimeoutError:
+        clicked = await page.evaluate(
+            """(name) => {
+                const nodes = Array.from(document.querySelectorAll('*'));
+                const node = nodes.find((el) => (el.innerText || '').trim() === name);
+                if (!node) return false;
+                node.scrollIntoView({block: 'center', inline: 'center'});
+                node.click();
+                return true;
+            }""",
+            merchant_display_name,
+        )
+        if not clicked:
+            raise RuntimeError(f"Could not select merchant: {merchant_display_name}")
     await page.wait_for_timeout(3000)
     await snapshot(page, "05-selected-merchant")
 
 
 async def add_terminal(page: Page, data: PaxProvisioningData, device: TerminalDevice, submit: bool) -> None:
     await select_merchant(page, data.merchant_display_name)
+    if device.serial_number in await page.locator("body").inner_text():
+        print(f"{device.role}-terminal-create-result=already-visible")
+        return
     await click_button_by_text_or_label(page, "TERMINAL")
     await page.wait_for_timeout(1500)
 
@@ -284,8 +383,33 @@ async def add_terminal(page: Page, data: PaxProvisioningData, device: TerminalDe
 
 
 async def select_terminal(page: Page, data: PaxProvisioningData, device: TerminalDevice) -> None:
-    await select_merchant(page, data.merchant_display_name)
     terminal_name = device.display_name(data)
+    body_text = await page.locator("body").inner_text(timeout=8000)
+    if "Terminal Details" in body_text and device.serial_number in body_text and terminal_name in body_text:
+        await snapshot(page, f"selected-{device.role}-terminal")
+        return
+
+    try:
+        if await page.locator("#left_menu_terminal_management").is_visible(timeout=2500):
+            await page.locator("#left_menu_terminal_management").click()
+            await page.wait_for_timeout(5000)
+    except PlaywrightTimeoutError:
+        pass
+
+    for locator in (
+        page.get_by_text(terminal_name, exact=True).first,
+        page.get_by_text(device.serial_number, exact=False).first,
+    ):
+        try:
+            if await locator.is_visible(timeout=2500):
+                await locator.click()
+                await page.wait_for_timeout(2500)
+                await snapshot(page, f"selected-{device.role}-terminal")
+                return
+        except PlaywrightTimeoutError:
+            continue
+
+    await select_merchant(page, data.merchant_display_name)
     for locator in (
         page.get_by_text(terminal_name, exact=True).first,
         page.get_by_text(device.serial_number, exact=False).first,
@@ -302,36 +426,44 @@ async def select_terminal(page: Page, data: PaxProvisioningData, device: Termina
 
 
 async def open_push_task(page: Page) -> None:
-    await page.get_by_role("button", name="App & Firmware").click()
+    await click_button_or_text(page, "App & Firmware")
     await page.wait_for_timeout(1500)
-    await page.get_by_role("button", name="Push Task").click()
+    await click_button_or_text(page, "Push Task")
     await page.wait_for_timeout(2000)
     await snapshot(page, "08-push-task")
 
 
 async def push_latest_firmware(page: Page, submit: bool) -> None:
-    await page.get_by_role("button", name="Push Firmware").click()
+    await click_button_or_text(page, "Push Firmware")
     await page.wait_for_timeout(1500)
+    current_text = await page.locator("body").inner_text(timeout=8000)
+    if "Uniphiz_" in current_text and ("Active" in current_text or "Activated" in current_text or "Completed" in current_text):
+        await snapshot(page, "09-existing-firmware-task")
+        return
+    if "Uniphiz_" in current_text and "ACTIVATE" in current_text:
+        await snapshot(page, "09-existing-firmware-task")
+        if submit:
+            await activate_current_task(page, "10-after-firmware-push")
+        return
+
     await click_button_by_text_or_label(page, "Add Firmware")
     await page.wait_for_timeout(2500)
     await snapshot(page, "09-firmware-list")
 
-    first_checkbox = page.locator("tbody tr").first.locator("input[type='checkbox']").first
-    await first_checkbox.click()
+    await select_first_result_row(page)
     if not submit:
         return
 
     await click_last_visible_ok(page)
     await page.wait_for_timeout(2500)
-    await page.get_by_role("button", name="ACTIVATE").click()
-    await page.wait_for_timeout(1000)
-    await click_last_visible_ok(page)
-    await page.wait_for_timeout(3000)
-    await snapshot(page, "10-after-firmware-push")
+    after_ok_text = await snapshot(page, "09-after-firmware-ok")
+    if "Active terminal firmware already exists" in after_ok_text:
+        return
+    await activate_current_task(page, "10-after-firmware-push")
 
 
 async def activate_current_task(page: Page, snapshot_name: str) -> None:
-    await page.get_by_role("button", name="ACTIVATE").click()
+    await click_button_or_text(page, "ACTIVATE")
     await page.wait_for_timeout(1000)
     await click_last_visible_ok(page)
     await page.wait_for_timeout(3000)
@@ -347,12 +479,12 @@ async def push_named_app(
     activate: bool,
     snapshot_prefix: str,
 ) -> None:
-    await page.get_by_role("button", name="Push App").click()
+    await click_button_or_text(page, "Push App")
     await page.wait_for_timeout(1500)
     await click_button_by_text_or_label(page, "Add App")
     await page.wait_for_timeout(1500)
 
-    search = page.locator("#Search, div.dialog_section_head input").first
+    search = page.locator("input#Search:visible, div.dialog_section_head input:visible, input[placeholder='Search']:visible").first
     await search.fill(query)
     await page.keyboard.press("Enter")
     await page.wait_for_timeout(2500)
@@ -368,8 +500,7 @@ async def push_named_app(
     except PlaywrightTimeoutError:
         pass
 
-    first_checkbox = page.locator("tbody tr").first.locator("input[type='checkbox']").first
-    await first_checkbox.click()
+    await select_first_result_row(page)
     await snapshot(page, f"{snapshot_prefix}-before-app-ok")
     if not submit:
         return
@@ -586,6 +717,8 @@ async def provision_single_terminal(
     if "firmware" in steps:
         await push_latest_firmware(page, submit)
     if "tsys" in steps:
+        await select_terminal(page, data, device)
+        await open_push_task(page)
         await push_tsys_app(page, data, submit, activate_payment_app)
 
 
@@ -609,6 +742,8 @@ async def provision_two_device_workflow(
         await select_terminal(page, data, pos_device)
         await open_push_task(page)
         await push_latest_firmware(page, submit)
+        await select_terminal(page, data, pos_device)
+        await open_push_task(page)
         await push_named_app(
             page,
             query="kit stock",
@@ -631,6 +766,8 @@ async def provision_two_device_workflow(
         await select_terminal(page, pinpad_data, pinpad_device)
         await open_push_task(page)
         await push_latest_firmware(page, submit)
+        await select_terminal(page, pinpad_data, pinpad_device)
+        await open_push_task(page)
         if pinpad_device.needs_back_screen():
             await push_named_app(
                 page,
@@ -715,6 +852,56 @@ def build_plan_summary(
     return summary
 
 
+def build_run_history_record(
+    args: argparse.Namespace,
+    *,
+    status: str,
+    pdf_path: Path | None = None,
+    data: PaxProvisioningData | None = None,
+    error: Exception | None = None,
+) -> dict:
+    record = {
+        "timestamp_utc": datetime.now(UTC).isoformat(),
+        "status": status,
+        "mode": "headed" if args.headed else "headless",
+        "plan_only": args.plan_only,
+        "submit": args.submit,
+        "steps": sorted(parse_steps(args.steps)),
+        "var_source": args.var_source,
+        "pdf_path": str(pdf_path) if pdf_path else None,
+        "merchant_number_arg": args.merchant_number,
+        "merchant_number_override": args.merchant_number_override,
+        "pos_serial": args.pos_serial,
+        "pinpad_serial": args.pinpad_serial,
+        "serial_number": args.serial_number,
+        "pos_model": args.pos_model,
+        "pinpad_model": args.pinpad_model,
+        "pinpad_back_screen": args.pinpad_back_screen,
+        "activate_payment_app": args.activate_payment_app,
+        "screenshots_dir": str(SCREENSHOT_DIR),
+    }
+    if data:
+        record.update(
+            {
+                "dba_name": data.dba_name,
+                "merchant_number": data.merchant_number,
+                "merchant_display_name": data.merchant_display_name,
+                "terminal_id_number": data.terminal_id_number,
+                "timezone": data.timezone_option,
+            }
+        )
+    if error:
+        record["error_type"] = type(error).__name__
+        record["error"] = str(error)
+    return record
+
+
+def append_run_history(record: dict) -> None:
+    RUN_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+    with RUN_HISTORY_FILE.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(record, ensure_ascii=True, sort_keys=True) + "\n")
+
+
 async def main() -> None:
     load_dotenv()
     load_dotenv(KIT_DASHBOARD_AGENT_DIR / ".env")
@@ -777,54 +964,55 @@ async def main() -> None:
         else None
     )
     if args.plan_only:
-        print(
-            json.dumps(
-                build_plan_summary(
-                    data,
-                    pdf_path=pdf_path,
-                    pos_device=pos_device,
-                    pinpad_device=pinpad_device,
-                    steps=steps,
-                    activate_payment_app=args.activate_payment_app,
-                ),
-                indent=2,
-                ensure_ascii=True,
-            )
+        plan_summary = build_plan_summary(
+            data,
+            pdf_path=pdf_path,
+            pos_device=pos_device,
+            pinpad_device=pinpad_device,
+            steps=steps,
+            activate_payment_app=args.activate_payment_app,
         )
+        append_run_history(build_run_history_record(args, status="success", pdf_path=pdf_path, data=data))
+        print(json.dumps(plan_summary, indent=2, ensure_ascii=True))
         return
 
     username = input("PAX username: ").strip()
     password = getpass("PAX password: ")
 
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=not args.headed)
-        context = await browser.new_context(viewport={"width": 1440, "height": 1000})
-        page = await context.new_page()
-        page.set_default_timeout(20000)
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=not args.headed)
+            context = await browser.new_context(viewport={"width": 1440, "height": 1000})
+            page = await context.new_page()
+            page.set_default_timeout(20000)
 
-        await login(page, username, password)
-        await open_terminal_management(page)
-        if args.pos_serial and args.pinpad_serial:
-            await provision_two_device_workflow(
-                page,
-                data,
-                pos_device=pos_device,
-                pinpad_device=pinpad_device,
-                steps=steps,
-                submit=args.submit,
-                activate_payment_app=args.activate_payment_app,
-            )
-        else:
-            await provision_single_terminal(
-                page,
-                data,
-                steps=steps,
-                submit=args.submit,
-                activate_payment_app=args.activate_payment_app,
-            )
+            await login(page, username, password)
+            await open_terminal_management(page)
+            if args.pos_serial and args.pinpad_serial:
+                await provision_two_device_workflow(
+                    page,
+                    data,
+                    pos_device=pos_device,
+                    pinpad_device=pinpad_device,
+                    steps=steps,
+                    submit=args.submit,
+                    activate_payment_app=args.activate_payment_app,
+                )
+            else:
+                await provision_single_terminal(
+                    page,
+                    data,
+                    steps=steps,
+                    submit=args.submit,
+                    activate_payment_app=args.activate_payment_app,
+                )
 
-        await context.close()
-        await browser.close()
+            await context.close()
+            await browser.close()
+        append_run_history(build_run_history_record(args, status="success", pdf_path=pdf_path, data=data))
+    except Exception as exc:
+        append_run_history(build_run_history_record(args, status="failure", pdf_path=pdf_path, data=data, error=exc))
+        raise
 
 
 if __name__ == "__main__":
