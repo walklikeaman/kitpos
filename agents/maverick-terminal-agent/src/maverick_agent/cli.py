@@ -49,7 +49,11 @@ def parse_pdf(pdf_path: Path) -> None:
 
 @app.command("plan")
 def plan(
-    merchant_id: str = typer.Option(..., help="Merchant ID received from the operator."),
+    merchant_number: str = typer.Option(
+        ...,
+        "--merchant-number",
+        help="Merchant Number from the VAR file or operator input.",
+    ),
     serial_number: str = typer.Option(..., help="Terminal or pinpad serial number."),
     pdf: Path | None = typer.Option(None, help="Optional direct path to the merchant PDF."),
 ) -> None:
@@ -57,7 +61,7 @@ def plan(
     settings = Settings.from_env()
     orchestrator = _build_orchestrator(settings)
     request = MerchantRequest(
-        merchant_id=merchant_id,
+        merchant_number=merchant_number,
         serial_number=serial_number,
         pdf_path=pdf,
     )

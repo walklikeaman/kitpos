@@ -17,7 +17,7 @@ class ProvisioningOrchestrator:
         notes: list[str] = []
 
         if pdf_path is None and self.inbox_client is not None:
-            attachment = self.inbox_client.find_latest_var_pdf(request.merchant_id)
+            attachment = self.inbox_client.find_latest_var_pdf(request.merchant_number)
             if attachment:
                 pdf_path = attachment.path
                 notes.append(
@@ -34,10 +34,10 @@ class ProvisioningOrchestrator:
         payload = self.parser.parse_file(pdf_path)
         extracted = payload.fields
 
-        extracted_merchant_reference = extracted.get("merchant_id") or extracted.get("merchant_number")
-        if extracted_merchant_reference and extracted_merchant_reference != request.merchant_id:
+        extracted_merchant_reference = extracted.get("merchant_number")
+        if extracted_merchant_reference and extracted_merchant_reference != request.merchant_number:
             notes.append(
-                "Warning: merchant reference extracted from PDF does not match the input merchant_id."
+                "Warning: Merchant Number extracted from PDF does not match the input Merchant Number."
             )
 
         if payload.missing_required:
@@ -48,14 +48,14 @@ class ProvisioningOrchestrator:
             )
 
         dba_name = extracted["dba_name"]
-        merchant_display_name = f"{dba_name} {request.merchant_id}"
+        merchant_display_name = f"{dba_name} {request.merchant_number}"
         terminal_display_name = f"{dba_name} {request.serial_number}"
         task_fields = self._build_task_fields(extracted)
 
         plan = RunPlan(
             merchant_display_name=merchant_display_name,
             terminal_display_name=terminal_display_name,
-            merchant_id=request.merchant_id,
+            merchant_number=request.merchant_number,
             serial_number=request.serial_number,
             pdf_path=pdf_path,
             extracted_fields=extracted,
@@ -65,7 +65,7 @@ class ProvisioningOrchestrator:
         return RunOutcome(
             status="ready_for_execution",
             message="Provisioning plan built successfully.",
-            next_action="Wire the confirmed PAX endpoint payloads, then execute merchant creation, activation, terminal creation, and app push.",
+            next_action="Run the PAX Store browser workflow with the parsed VAR PDF values.",
             plan=plan,
         )
 
@@ -90,6 +90,6 @@ class ProvisioningOrchestrator:
             if value:
                 task_fields.append(TaskField(key=key, value=value, source=source))
 
-        timezone = extracted.get("timezone") or "708 PST"
+        timezone = extracted.get("timezone") or "708-PST"
         task_fields.append(TaskField(key="timezone", value=timezone, source="default_or_pdf"))
         return task_fields

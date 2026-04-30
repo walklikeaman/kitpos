@@ -20,7 +20,7 @@ class ImapInboxClient:
     mailbox: str = "INBOX"
     scan_limit: int = 50
 
-    def find_latest_var_pdf(self, merchant_id: str) -> AttachmentCandidate | None:
+    def find_latest_var_pdf(self, merchant_number: str) -> AttachmentCandidate | None:
         with imaplib.IMAP4_SSL(self.host, self.port) as client:
             client.login(self.username, self.password)
             client.select(self.mailbox)
@@ -36,7 +36,7 @@ class ImapInboxClient:
 
                 message = message_from_bytes(msg_data[0][1], policy=policy.default)
                 haystack = self._message_haystack(message)
-                if merchant_id.casefold() not in haystack.casefold():
+                if merchant_number.casefold() not in haystack.casefold():
                     continue
 
                 attachment = self._download_first_pdf(message)
@@ -80,4 +80,3 @@ class ImapInboxClient:
                 sender=sender,
             )
         return None
-

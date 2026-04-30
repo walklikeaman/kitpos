@@ -4,8 +4,8 @@ Automated terminal provisioning agent for adding payment terminals to merchants.
 
 ## Features
 
-- Parse merchant VAR (Variable Rate) PDFs
-- Extract terminal and merchant information
+- Parse merchant VAR PDFs
+- Extract VAR numbers and TSYS parameter values
 - Auto-detect merchant data from email inbox (IMAP)
 - Build provisioning plans for PAX terminals
 - Validate merchant references and required fields
@@ -60,7 +60,7 @@ maverick parse-pdf "/path/to/merchant-vat.pdf"
 
 ```bash
 maverick plan \
-  --merchant-id MERCHANT123 \
+  --merchant-number 201100302455 \
   --serial-number ABC123DEF456 \
   --pdf "/path/to/merchant-vat.pdf"
 ```
@@ -69,9 +69,43 @@ Or auto-detect PDF from email:
 
 ```bash
 maverick plan \
-  --merchant-id MERCHANT123 \
+  --merchant-number 201100302455 \
   --serial-number ABC123DEF456
 ```
+
+### Run the PAX Store browser workflow
+
+Install browser support:
+
+```bash
+pip install -e '.[browser]'
+python -m playwright install chromium
+```
+
+Dry-run the recorded browser flow. This fills forms and writes screenshots under
+`tmp/screenshots/`, but does not click final submit buttons:
+
+```bash
+python scripts/paxstore_provision_from_pdf.py \
+  --pdf "/path/to/merchant-var.pdf" \
+  --serial-number 2290653126 \
+  --steps merchant,terminal
+```
+
+Execute submit clicks explicitly:
+
+```bash
+python scripts/paxstore_provision_from_pdf.py \
+  --pdf "/path/to/merchant-var.pdf" \
+  --serial-number 2290653126 \
+  --steps merchant,terminal \
+  --submit
+```
+
+The PAX Store runner reads Merchant Number and TSYS parameter values from the
+VAR PDF first, then fills the recorded browser flow. See
+`docs/PAXSTORE_RECORDED_FLOW.md` for the TSYS field mapping extracted from the
+browser recording.
 
 ## Project Structure
 
@@ -102,7 +136,7 @@ maverick-terminal-agent/
 
 ## Models
 
-- `MerchantRequest` - Input: merchant ID, serial number, PDF path
+- `MerchantRequest` - Input: merchant number, serial number, PDF path
 - `VarPayload` - Extracted fields from PDF
 - `RunPlan` - Provisioning plan with validated fields
 - `RunOutcome` - Final status and next actions

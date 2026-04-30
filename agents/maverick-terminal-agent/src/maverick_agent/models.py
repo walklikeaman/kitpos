@@ -7,7 +7,7 @@ from typing import Any
 
 @dataclass(slots=True)
 class MerchantRequest:
-    merchant_id: str
+    merchant_number: str
     serial_number: str
     pdf_path: Path | None = None
 
@@ -43,7 +43,7 @@ class TaskField:
 class RunPlan:
     merchant_display_name: str
     terminal_display_name: str
-    merchant_id: str
+    merchant_number: str
     serial_number: str
     pdf_path: Path | None
     extracted_fields: dict[str, str]
