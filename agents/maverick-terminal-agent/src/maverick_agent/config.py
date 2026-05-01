@@ -25,6 +25,7 @@ class Settings:
     kit_dashboard_email: str | None
     kit_dashboard_password: str | None
     kit_dashboard_storage_state: str
+    kit_api_key: str | None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -48,4 +49,5 @@ class Settings:
             kit_dashboard_email=os.getenv("KIT_DASHBOARD_EMAIL") or os.getenv("KIT_EMAIL"),
             kit_dashboard_password=os.getenv("KIT_DASHBOARD_PASSWORD") or os.getenv("KIT_PASSWORD"),
             kit_dashboard_storage_state=os.getenv("KIT_DASHBOARD_STORAGE_STATE", "tmp/kit-dashboard-state.json"),
+            kit_api_key=os.getenv("KIT_API_KEY"),
         )

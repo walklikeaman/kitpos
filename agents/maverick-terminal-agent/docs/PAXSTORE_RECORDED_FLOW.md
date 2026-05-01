@@ -30,23 +30,31 @@ The recording shows this sequence:
 22. Fill TSYS parameters.
 23. Click Next.
 
+## VAR Data Source
+
+Preferred source is the KIT Dashboard API from
+`agents/kit-dashboard-merchant-data` when `KIT_API_KEY` is configured. Use
+`--var-v-number` or `--var-terminal-number` when the Merchant Number has more
+than one VAR row. PDF parsing remains as a fallback via `--pdf`, Kit Dashboard
+download, or email.
+
 ## TSYS Field Mapping
 
-The script reads the VAR PDF first, then maps extracted VAR numbers to the recorded TSYS form fields:
+The script reads KIT API VAR data or the VAR PDF first, then maps extracted VAR numbers to the recorded TSYS form fields:
 
 | TSYS label | Recorded input id | Source |
 | --- | --- | --- |
-| Merchant Name | `6_tsys_F1_tsys_param_merchantName` | PDF DBA |
-| Bank Identification Number | `0_tsys_F1_tsys_param_BIN` | PDF BIN |
-| Agent Bank Number | `1_tsys_F1_tsys_param_agentNumber` | PDF Agent Bank |
-| Agent Chain Number | `2_tsys_F1_tsys_param_chainNumber` | PDF Chain |
-| Merchant Number | `3_tsys_F1_tsys_param_MID` | PDF Merchant number |
-| Store Number | `4_tsys_F1_tsys_param_storeNumber` | PDF Store Number |
-| Terminal Number | `5_tsys_F1_tsys_param_terminalNumber` | PDF Terminal Number |
-| Merchant City | `7_tsys_F1_tsys_param_merchantCity` | PDF City |
-| Merchant State | `8_tsys_F1_tsys_param_merchantState` | PDF State |
-| City Code | `9_tsys_F1_tsys_param_cityCode` | PDF ZIP |
-| Merchant Category Code | `13_tsys_F1_tsys_param_categoryCode` | PDF MCC |
+| Merchant Name | `6_tsys_F1_tsys_param_merchantName` | VAR DBA |
+| Bank Identification Number | `0_tsys_F1_tsys_param_BIN` | VAR BIN |
+| Agent Bank Number | `1_tsys_F1_tsys_param_agentNumber` | VAR Agent Bank |
+| Agent Chain Number | `2_tsys_F1_tsys_param_chainNumber` | VAR Chain |
+| Merchant Number | `3_tsys_F1_tsys_param_MID` | VAR Merchant number |
+| Store Number | `4_tsys_F1_tsys_param_storeNumber` | VAR Store Number |
+| Terminal Number | `5_tsys_F1_tsys_param_terminalNumber` | VAR Terminal Number |
+| Merchant City | `7_tsys_F1_tsys_param_merchantCity` | VAR City |
+| Merchant State | `8_tsys_F1_tsys_param_merchantState` | VAR State |
+| City Code | `9_tsys_F1_tsys_param_cityCode` | VAR ZIP |
+| Merchant Category Code | `13_tsys_F1_tsys_param_categoryCode` | VAR MCC |
 | Time Zone Differential | `17_tsys_F1_tsys_param_timeZone` | Fixed `708-PST` |
 | Terminal ID Number | `19_tsys_F1_tsys_param_TID` | Derived `V Number -> 7...` |
 
@@ -56,7 +64,9 @@ Use dry-run first. Dry-run fills forms and captures screenshots, but does not cl
 
 ```bash
 python scripts/paxstore_provision_from_pdf.py \
-  --pdf "/path/to/var-sheet.pdf" \
+  --merchant-number 201100306001 \
+  --var-source kit-api \
+  --var-v-number V6615476 \
   --serial-number 2290653126 \
   --steps merchant,terminal
 ```
@@ -65,7 +75,9 @@ Execute submit clicks explicitly:
 
 ```bash
 python scripts/paxstore_provision_from_pdf.py \
-  --pdf "/path/to/var-sheet.pdf" \
+  --merchant-number 201100306001 \
+  --var-source kit-api \
+  --var-v-number V6615476 \
   --serial-number 2290653126 \
   --steps merchant,terminal \
   --submit
@@ -75,7 +87,9 @@ Full workflow after the terminal flow is confirmed:
 
 ```bash
 python scripts/paxstore_provision_from_pdf.py \
-  --pdf "/path/to/var-sheet.pdf" \
+  --merchant-number 201100306001 \
+  --var-source kit-api \
+  --var-v-number V6615476 \
   --serial-number 2290653126 \
   --steps all \
   --submit
@@ -107,5 +121,5 @@ PIN pad:
 - Install `KIT Back Screen` only when the model requires it. Current default: `A3700`/`3700` requires it; `A35` does not.
 - Push `BroadPOS TSYS Sierra`.
 - Load `Parameter File:retail.zip` before filling TSYS fields.
-- Fill TSYS fields from the VAR PDF.
+- Fill TSYS fields from KIT API VAR data or the VAR PDF fallback.
 - Keep the BroadPOS TSYS Sierra task pending for review unless `--activate-payment-app` is explicitly passed.

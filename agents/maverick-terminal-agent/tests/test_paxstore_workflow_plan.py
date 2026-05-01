@@ -38,6 +38,7 @@ def test_a3700_pinpad_gets_back_screen() -> None:
     device = paxstore.TerminalDevice("pinpad", "2620079273", "A3700")
     plan = paxstore.build_plan_summary(
         make_data(),
+        var_source_path="var.pdf",
         pdf_path=Path("var.pdf"),
         pos_device=None,
         pinpad_device=device,
@@ -52,6 +53,7 @@ def test_a35_pinpad_skips_back_screen() -> None:
     device = paxstore.TerminalDevice("pinpad", "2290653126", "A35")
     plan = paxstore.build_plan_summary(
         make_data(),
+        var_source_path="var.pdf",
         pdf_path=Path("var.pdf"),
         pos_device=None,
         pinpad_device=device,
@@ -66,3 +68,27 @@ def test_back_screen_can_be_overridden() -> None:
     device = paxstore.TerminalDevice("pinpad", "2290653126", "A35", install_back_screen=True)
 
     assert device.needs_back_screen()
+
+
+def test_api_var_data_derives_terminal_id_number() -> None:
+    data = paxstore.PaxProvisioningData.from_api_var(
+        {
+            "dba": "B&B Chill and Blend",
+            "mid": "201100306001",
+            "bin": "422108",
+            "agent_bank": "081960",
+            "chain": "081960",
+            "store_number": "0001",
+            "terminal_number": "7000",
+            "city": "OKC",
+            "state": "Oklahoma",
+            "zip": "73101",
+            "mcc": "5993",
+            "v_number": "V6615476",
+        },
+        "2620079273",
+    )
+
+    assert data.terminal_id_number == "76615476"
+    assert data.terminal_number == "7000"
+    assert data.terminal_display_name == "B&B Chill and Blend 2620079273"

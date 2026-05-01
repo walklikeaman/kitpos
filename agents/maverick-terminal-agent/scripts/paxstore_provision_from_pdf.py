@@ -84,6 +84,35 @@ class PaxProvisioningData:
             terminal_id_number=fields["terminal_id_number"],
         )
 
+    @classmethod
+    def from_api_var(
+        cls,
+        var_data: dict,
+        serial_number: str,
+        merchant_number_override: str | None = None,
+    ) -> "PaxProvisioningData":
+        merchant_number = merchant_number_override or str(var_data["mid"])
+        dba_name = var_data["dba"]
+        terminal_number = str(var_data["terminal_number"])
+        v_number = str(var_data["v_number"])
+        return cls(
+            dba_name=dba_name,
+            merchant_number=merchant_number,
+            serial_number=serial_number,
+            merchant_display_name=f"{dba_name} {merchant_number}",
+            terminal_display_name=f"{dba_name} {serial_number}",
+            bin=str(var_data["bin"]),
+            agent_bank=str(var_data["agent_bank"]),
+            chain=str(var_data["chain"]),
+            store_number=str(var_data["store_number"]),
+            terminal_number=terminal_number,
+            city=str(var_data.get("city", "")),
+            state=str(var_data.get("state", "")),
+            zip=str(var_data.get("zip", "")),
+            mcc=str(var_data.get("mcc", "")),
+            terminal_id_number=derive_terminal_id_number(v_number),
+        )
+
 
 @dataclass(slots=True)
 class TerminalDevice:
@@ -100,6 +129,15 @@ class TerminalDevice:
             return self.install_back_screen
         model = (self.expected_model or "").upper().replace("PAX", "").strip()
         return model in PINPAD_MODELS_WITH_BACK_SCREEN
+
+
+def derive_terminal_id_number(v_number: str) -> str:
+    v_number = v_number.strip()
+    if v_number.startswith("V") and len(v_number) > 1:
+        return "7" + v_number[1:]
+    if v_number and not v_number.startswith("7"):
+        return "7" + v_number
+    return v_number
 
 
 async def snapshot(page: Page, name: str) -> str:
@@ -662,6 +700,51 @@ def download_var_from_email(merchant_number: str, *, settings: Settings) -> Path
     return attachment.path if attachment else None
 
 
+def get_var_data_from_kit_api(
+    merchant_number: str,
+    *,
+    settings: Settings,
+    v_number: str | None = None,
+    terminal_number: str | None = None,
+) -> dict | None:
+    if not settings.kit_api_key:
+        return None
+    if not KIT_DASHBOARD_AGENT_DIR.exists():
+        return None
+
+    sys.path.insert(0, str(KIT_DASHBOARD_AGENT_DIR / "src"))
+    from merchant_data.services.kit_api import MerchantAPIService, UnknownChainError
+
+    try:
+        var_items = MerchantAPIService(settings.kit_api_key).var_data_by_mid(merchant_number)
+    except UnknownChainError as exc:
+        chains = ", ".join(sorted(exc.chains))
+        raise RuntimeError(
+            f"UNKNOWN_CHAIN for {exc.merchant_name}: {chains}. "
+            "Follow agents/kit-dashboard-merchant-data/AGENT_CONTEXT.md before retrying."
+        ) from exc
+
+    if not var_items:
+        return None
+
+    rows = [item.to_dict() for item in var_items]
+    if v_number:
+        normalized = v_number.strip().upper()
+        for row in rows:
+            if str(row.get("v_number", "")).strip().upper() == normalized:
+                return row
+        raise RuntimeError(f"KIT API returned VAR rows, but none matched V Number {v_number}")
+
+    if terminal_number:
+        normalized_terminal = str(terminal_number).strip()
+        for row in rows:
+            if str(row.get("terminal_number", "")).strip() == normalized_terminal:
+                return row
+        raise RuntimeError(f"KIT API returned VAR rows, but none matched Terminal Number {terminal_number}")
+
+    return rows[0]
+
+
 async def resolve_var_pdf(args: argparse.Namespace, settings: Settings) -> Path:
     if args.pdf:
         return args.pdf
@@ -696,6 +779,58 @@ async def resolve_var_pdf(args: argparse.Namespace, settings: Settings) -> Path:
 
     details = "; ".join(last_errors) if last_errors else "no configured source returned a PDF"
     raise RuntimeError(f"Could not resolve VAR PDF for Merchant Number {args.merchant_number}: {details}")
+
+
+async def resolve_provisioning_data(
+    args: argparse.Namespace,
+    settings: Settings,
+    *,
+    primary_serial: str,
+) -> tuple[PaxProvisioningData, str, Path | None]:
+    merchant_number_override = args.merchant_number_override or args.merchant_number
+    if args.pdf:
+        pdf_path = args.pdf
+        return (
+            PaxProvisioningData.from_pdf(pdf_path, primary_serial, merchant_number_override),
+            str(pdf_path),
+            pdf_path,
+        )
+
+    if not args.merchant_number:
+        raise RuntimeError("--merchant-number is required when --pdf is not provided")
+
+    sources = ["kit-api", "kit-dashboard", "email"] if args.var_source == "auto" else [args.var_source]
+    last_errors: list[str] = []
+    for source in sources:
+        try:
+            if source == "kit-api":
+                var_data = get_var_data_from_kit_api(
+                    args.merchant_number,
+                    settings=settings,
+                    v_number=args.var_v_number,
+                    terminal_number=args.var_terminal_number,
+                )
+                if var_data:
+                    print(f"VAR data resolved from KIT API for Merchant Number {args.merchant_number}")
+                    return (
+                        PaxProvisioningData.from_api_var(var_data, primary_serial, merchant_number_override),
+                        f"kit-api:{args.merchant_number}",
+                        None,
+                    )
+            elif source in {"kit-dashboard", "email"}:
+                args_for_pdf = argparse.Namespace(**vars(args))
+                args_for_pdf.var_source = source
+                pdf_path = await resolve_var_pdf(args_for_pdf, settings)
+                return (
+                    PaxProvisioningData.from_pdf(pdf_path, primary_serial, merchant_number_override),
+                    str(pdf_path),
+                    pdf_path,
+                )
+        except Exception as exc:
+            last_errors.append(f"{source}: {exc}")
+
+    details = "; ".join(last_errors) if last_errors else "no configured source returned VAR data"
+    raise RuntimeError(f"Could not resolve VAR data for Merchant Number {args.merchant_number}: {details}")
 
 
 async def provision_single_terminal(
@@ -783,14 +918,16 @@ async def provision_two_device_workflow(
 def build_plan_summary(
     data: PaxProvisioningData,
     *,
-    pdf_path: Path,
+    var_source_path: str,
+    pdf_path: Path | None = None,
     pos_device: TerminalDevice | None,
     pinpad_device: TerminalDevice | None,
     steps: set[str],
     activate_payment_app: bool,
 ) -> dict:
     summary = {
-        "pdf_path": str(pdf_path),
+        "var_source_path": var_source_path,
+        "pdf_path": str(pdf_path) if pdf_path else None,
         "merchant_display_name": data.merchant_display_name,
         "merchant_number": data.merchant_number,
         "dba_name": data.dba_name,
@@ -857,6 +994,7 @@ def build_run_history_record(
     *,
     status: str,
     pdf_path: Path | None = None,
+    var_source_path: str | None = None,
     data: PaxProvisioningData | None = None,
     error: Exception | None = None,
 ) -> dict:
@@ -868,7 +1006,10 @@ def build_run_history_record(
         "submit": args.submit,
         "steps": sorted(parse_steps(args.steps)),
         "var_source": args.var_source,
+        "var_source_path": var_source_path or (str(pdf_path) if pdf_path else None),
         "pdf_path": str(pdf_path) if pdf_path else None,
+        "var_v_number": args.var_v_number,
+        "var_terminal_number": args.var_terminal_number,
         "merchant_number_arg": args.merchant_number,
         "merchant_number_override": args.merchant_number_override,
         "pos_serial": args.pos_serial,
@@ -905,7 +1046,7 @@ def append_run_history(record: dict) -> None:
 async def main() -> None:
     load_dotenv()
     load_dotenv(KIT_DASHBOARD_AGENT_DIR / ".env")
-    parser = argparse.ArgumentParser(description="Provision PAX merchant, terminal, and app push tasks from a VAR PDF.")
+    parser = argparse.ArgumentParser(description="Provision PAX merchant, terminal, and app push tasks from VAR data.")
     parser.add_argument("--pdf", type=Path)
     parser.add_argument("--merchant-number", help="Merchant Number used to find/download the VAR PDF when --pdf is omitted.")
     parser.add_argument("--serial-number", help="Legacy single-device serial number.")
@@ -927,7 +1068,9 @@ async def main() -> None:
         help="Do not install KIT Back Screen on the PIN pad.",
     )
     parser.set_defaults(pinpad_back_screen=None)
-    parser.add_argument("--var-source", choices=["auto", "kit-dashboard", "email"], default="auto")
+    parser.add_argument("--var-source", choices=["auto", "kit-api", "kit-dashboard", "email"], default="auto")
+    parser.add_argument("--var-v-number", help="Select a specific KIT API VAR row by V Number, for example V6615476.")
+    parser.add_argument("--var-terminal-number", help="Select a specific KIT API VAR row by TSYS Terminal Number.")
     parser.add_argument("--var-download-dir", type=Path, default=DEFAULT_VAR_DOWNLOAD_DIR)
     parser.add_argument("--kit-verification-code", help="KIT Dashboard 2FA code when the session requires verification.")
     parser.add_argument(
@@ -950,12 +1093,11 @@ async def main() -> None:
     args = parser.parse_args()
 
     settings = Settings.from_env()
-    pdf_path = await resolve_var_pdf(args, settings)
     primary_serial = args.pinpad_serial or args.serial_number or args.pos_serial
     if not primary_serial:
         raise RuntimeError("Provide --serial-number for single-device mode or --pos-serial/--pinpad-serial for two-device mode")
 
-    data = PaxProvisioningData.from_pdf(pdf_path, primary_serial, args.merchant_number_override or args.merchant_number)
+    data, var_source_path, pdf_path = await resolve_provisioning_data(args, settings, primary_serial=primary_serial)
     steps = parse_steps(args.steps)
     pos_device = TerminalDevice("pos", args.pos_serial, args.pos_model) if args.pos_serial else None
     pinpad_device = (
@@ -966,13 +1108,22 @@ async def main() -> None:
     if args.plan_only:
         plan_summary = build_plan_summary(
             data,
+            var_source_path=var_source_path,
             pdf_path=pdf_path,
             pos_device=pos_device,
             pinpad_device=pinpad_device,
             steps=steps,
             activate_payment_app=args.activate_payment_app,
         )
-        append_run_history(build_run_history_record(args, status="success", pdf_path=pdf_path, data=data))
+        append_run_history(
+            build_run_history_record(
+                args,
+                status="success",
+                pdf_path=pdf_path,
+                var_source_path=var_source_path,
+                data=data,
+            )
+        )
         print(json.dumps(plan_summary, indent=2, ensure_ascii=True))
         return
 
@@ -1009,9 +1160,26 @@ async def main() -> None:
 
             await context.close()
             await browser.close()
-        append_run_history(build_run_history_record(args, status="success", pdf_path=pdf_path, data=data))
+        append_run_history(
+            build_run_history_record(
+                args,
+                status="success",
+                pdf_path=pdf_path,
+                var_source_path=var_source_path,
+                data=data,
+            )
+        )
     except Exception as exc:
-        append_run_history(build_run_history_record(args, status="failure", pdf_path=pdf_path, data=data, error=exc))
+        append_run_history(
+            build_run_history_record(
+                args,
+                status="failure",
+                pdf_path=pdf_path,
+                var_source_path=var_source_path,
+                data=data,
+                error=exc,
+            )
+        )
         raise
 
 

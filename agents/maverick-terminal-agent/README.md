@@ -5,6 +5,7 @@ Automated terminal provisioning agent for adding payment terminals to merchants.
 ## Features
 
 - Parse merchant VAR PDFs
+- Resolve merchant VAR data from KIT Dashboard API when `KIT_API_KEY` is available
 - Extract VAR numbers and TSYS parameter values
 - Auto-detect merchant data from email inbox (IMAP)
 - Build provisioning plans for PAX terminals
@@ -37,6 +38,9 @@ MAIL_USERNAME=your-email@example.com
 MAIL_PASSWORD=your-password
 MAIL_IMAP_MAILBOX=INBOX
 MAIL_SCAN_LIMIT=50
+
+# KIT Dashboard API lookup (preferred for VAR data)
+KIT_API_KEY=your-kit-api-key
 ```
 
 Or set environment variables:
@@ -102,13 +106,15 @@ python scripts/paxstore_provision_from_pdf.py \
   --submit
 ```
 
-Two-device merchant flow. The runner resolves the VAR PDF from Kit Dashboard
-first, falls back to email when configured, then creates/plans POS and PIN pad
-tasks:
+Two-device merchant flow. The runner resolves VAR data from the KIT Dashboard
+API first when `KIT_API_KEY` is configured, then falls back to Kit Dashboard PDF
+download and email when configured:
 
 ```bash
 python scripts/paxstore_provision_from_pdf.py \
   --merchant-number 201100306001 \
+  --var-source kit-api \
+  --var-v-number V6615476 \
   --pos-serial 2630132073 \
   --pinpad-serial 2620079273 \
   --pos-model L1400 \
@@ -123,17 +129,18 @@ Rules in this flow:
 - PIN pad gets latest firmware first, then `BroadPOS TSYS Sierra`.
 - `KIT Back Screen` is installed only for supported PIN pad models, currently `A3700`/`3700`; use `--pinpad-back-screen` or `--no-pinpad-back-screen` to override.
 - BroadPOS TSYS Sierra loads `Parameter File:retail.zip`, fills VAR numbers, and stays pending unless `--activate-payment-app` is explicitly passed.
+- If a merchant has multiple VAR rows, select the intended row with `--var-v-number` or `--var-terminal-number`; otherwise the first API row is used.
 
-The PAX Store runner reads Merchant Number and TSYS parameter values from the
-VAR PDF first, then fills the recorded browser flow. See
+The PAX Store runner reads Merchant Number and TSYS parameter values from KIT API
+or VAR PDF, then fills the recorded browser flow. See
 `docs/PAXSTORE_RECORDED_FLOW.md` for the TSYS field mapping extracted from the
 browser recording.
 
 Every run appends a non-secret JSONL record to
 `tmp/run-history/paxstore_runs.jsonl`. Use it to compare successful and failed
 runs by mode (`headless`/`headed`), steps, device models, serial numbers,
-submit flags, PDF path, and final error/status. Screenshots and page text remain
-under `tmp/screenshots/`.
+submit flags, VAR source path, PDF path when used, and final error/status.
+Screenshots and page text remain under `tmp/screenshots/`.
 
 ## Project Structure
 
