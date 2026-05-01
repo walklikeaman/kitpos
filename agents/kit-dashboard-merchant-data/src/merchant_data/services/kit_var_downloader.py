@@ -1,17 +1,26 @@
 """
-VAR Sheet downloader — hybrid approach:
+VAR Sheet downloader — fully browserless approach:
 
-1. Maverick API  → merchant internal_id + terminal_id  (no browser)
-2. Session cookie → Playwright login (once, then cached)
-3. Direct HTTP    → download VAR PDF with session cookie (no browser navigation)
+1. Maverick API      → merchant internal_id + terminal_id
+2. HTTP login        → POST credentials to /login, handle 2FA, get msession cookie
+3. Profile page HTTP → parse merchantAccountId from HTML (used in VAR URL)
+4. Direct HTTP       → download VAR PDF with session cookie
+
+No Playwright / no browser required at any step.
 
 URL pattern: https://kitdashboard.com/merchant/profile/view-var-sheet
-             ?id={internal_id}&terminalId={terminal_id}
+             ?id={merchant_account_id}&terminalId={terminal_id}
+
+Note: merchant_account_id ≠ API merchant.id — it's the "acquiring account" ID
+      that only appears in the dashboard profile page HTML.
 """
 from __future__ import annotations
 
+import http.cookiejar
 import json
+import re
 import ssl
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -49,11 +58,10 @@ class VarDownloader:
         api_key: str,
         credentials: KitCredentials,
         *,
-        headless: bool = True,
+        headless: bool = True,  # kept for CLI compatibility, no longer used
     ) -> None:
         self.api_key = api_key
         self.credentials = credentials
-        self.headless = headless
 
     # ------------------------------------------------------------------ public
 
@@ -115,7 +123,6 @@ class VarDownloader:
             raise RuntimeError(
                 f"No terminals found for merchant id={merchant_internal_id}"
             )
-        # Prefer active terminal; fallback to first
         active = [t for t in items if t.get("status", "").lower() == "active"]
         chosen = active[0] if active else items[0]
         return int(chosen["id"])
@@ -136,14 +143,14 @@ class VarDownloader:
         # Try with cached session first
         cookie_str = self._load_session_cookies()
 
-        # Step 1: Fetch profile page to get merchantAccountId and real VAR links
+        # Fetch profile page to get VAR links (contains merchantAccountId)
         var_url = self._get_var_url_from_profile(
             merchant_internal_id, terminal_id, cookie_str
         )
 
-        # If we couldn't get a VAR URL (session expired) → re-login
+        # Session expired → HTTP login and retry
         if var_url is None:
-            cookie_str = self._browser_login_and_get_cookies()
+            cookie_str = self._http_login()
             var_url = self._get_var_url_from_profile(
                 merchant_internal_id, terminal_id, cookie_str
             )
@@ -151,12 +158,10 @@ class VarDownloader:
         if var_url is None:
             raise RuntimeError(
                 f"Could not find VAR link in profile for {merchant_name} "
-                f"(id={merchant_internal_id}). Session may be invalid."
+                f"(id={merchant_internal_id}). Login may have failed."
             )
 
-        # Step 2: Download the PDF
         pdf_bytes = self._http_get_pdf(var_url, cookie_str)
-
         if pdf_bytes is None:
             raise RuntimeError(
                 f"Failed to download VAR PDF for merchant {merchant_name} "
@@ -179,36 +184,32 @@ class VarDownloader:
         preferred_terminal_id: int,
         cookie_str: str,
     ) -> Optional[str]:
-        """Fetch merchant profile page, extract merchantAccountId and VAR links.
+        """Fetch merchant profile page, parse VAR links from HTML.
 
-        The dashboard uses 'merchantAccountId' (≠ API merchant id) in VAR URLs.
-        We parse all var-sheet links from the profile HTML and pick the one
-        matching the preferred terminal (or just the first one).
+        The dashboard uses 'merchantAccountId' (≠ API merchant.id) in VAR URLs.
+        e.g. /view-var-sheet?id=330902&terminalId=800750
+             where 330902 is merchantAccountId, 299390 is API merchant.id
         """
         if not cookie_str:
             return None
-        profile_url = (
-            f"{_KIT_BASE}/merchant/profile/index?id={merchant_internal_id}"
+        req = urllib.request.Request(
+            f"{_KIT_BASE}/merchant/profile/index?id={merchant_internal_id}",
+            headers={
+                "Cookie": cookie_str,
+                "User-Agent": _UA,
+                "Accept": "text/html,*/*",
+                "Referer": f"{_KIT_BASE}/",
+            },
         )
-        req = urllib.request.Request(profile_url, headers={
-            "Cookie": cookie_str,
-            "User-Agent": _UA,
-            "Accept": "text/html,*/*",
-            "Referer": f"{_KIT_BASE}/",
-        })
         try:
             with urllib.request.urlopen(req, timeout=30, context=_SSL) as resp:
                 html = resp.read().decode("utf-8", errors="replace")
         except urllib.error.HTTPError:
             return None
 
-        # If redirected to login page, session is invalid
         if "view-var-sheet" not in html:
-            return None
+            return None  # session invalid or merchant has no VAR
 
-        # Find all VAR sheet links, e.g.:
-        # href="https://kitdashboard.com/merchant/profile/view-var-sheet?id=330902&terminalId=800750"
-        import re
         var_links = re.findall(
             r'href="(https://kitdashboard\.com/merchant/profile/view-var-sheet\?[^"]+)"',
             html,
@@ -216,16 +217,14 @@ class VarDownloader:
         if not var_links:
             return None
 
-        # Prefer the link matching the preferred terminal
         for link in var_links:
             if f"terminalId={preferred_terminal_id}" in link:
                 return link.replace("&amp;", "&")
 
-        # Fallback: first VAR link
         return var_links[0].replace("&amp;", "&")
 
     def _http_get_pdf(self, url: str, cookie_str: str) -> Optional[bytes]:
-        """Download URL using session cookies. Returns bytes if PDF, None if got HTML."""
+        """Download URL using session cookies. Returns bytes if PDF, else None."""
         req = urllib.request.Request(url, headers={
             "Cookie": cookie_str,
             "User-Agent": _UA,
@@ -235,16 +234,14 @@ class VarDownloader:
         try:
             with urllib.request.urlopen(req, timeout=30, context=_SSL) as resp:
                 data = resp.read()
-                if data[:4] == b"%PDF":
-                    return data
-                return None
+                return data if data[:4] == b"%PDF" else None
         except urllib.error.HTTPError:
             return None
 
     # ---------------------------------------------------- session management
 
     def _load_session_cookies(self) -> str:
-        """Load kitdashboard cookies from Playwright storage_state."""
+        """Load kitdashboard cookies from saved JSON state."""
         state_path = self.credentials.storage_state
         if not state_path.exists():
             return ""
@@ -259,41 +256,188 @@ class VarDownloader:
         except Exception:
             return ""
 
-    def _browser_login_and_get_cookies(self) -> str:
-        """Fresh Playwright login, save state, return cookie string."""
-        import asyncio
-        return asyncio.run(self._async_login())
+    def _preload_cookies_into_jar(self, jar: http.cookiejar.CookieJar) -> None:
+        """Inject saved cookies (deviceId, tsv_*, msession, …) into the jar.
 
-    async def _async_login(self) -> str:
-        """Use the proven MerchantLookupService login, then return cookies."""
-        from merchant_data.services.kit_merchant_lookup import MerchantLookupService
+        This makes the server treat the HTTP client as a trusted device,
+        skipping 2FA on re-login even after the msession expires.
+        """
+        state_path = self.credentials.storage_state
+        if not state_path.exists():
+            return
+        try:
+            state = json.loads(state_path.read_text())
+        except Exception:
+            return
+        for c in state.get("cookies", []):
+            if "kitdashboard" not in c.get("domain", ""):
+                continue
+            cookie = http.cookiejar.Cookie(
+                version=0,
+                name=c["name"],
+                value=c["value"],
+                port=None,
+                port_specified=False,
+                domain=c.get("domain", "kitdashboard.com"),
+                domain_specified=True,
+                domain_initial_dot=c.get("domain", "").startswith("."),
+                path=c.get("path", "/"),
+                path_specified=True,
+                secure=c.get("secure", False),
+                expires=None,
+                discard=True,
+                comment=None,
+                comment_url=None,
+                rest={},
+            )
+            jar.set_cookie(cookie)
 
-        svc = MerchantLookupService(self.credentials, headless=self.headless)
-
-        from playwright.async_api import async_playwright
+    def _save_session_cookies(self, jar: http.cookiejar.CookieJar) -> str:
+        """Persist cookies from a CookieJar to JSON and return cookie string."""
         creds = self.credentials
         creds.storage_state.parent.mkdir(parents=True, exist_ok=True)
 
-        async with async_playwright() as pw:
-            browser = await pw.chromium.launch(headless=self.headless)
-            ctx_kwargs: dict = {"viewport": {"width": 1440, "height": 900}}
-            if creds.storage_state.exists():
-                ctx_kwargs["storage_state"] = str(creds.storage_state)
-            ctx = await browser.new_context(**ctx_kwargs)
-            page = await ctx.new_page()
-            page.set_default_timeout(20000)
-
-            await svc._login(page)
-            await ctx.storage_state(path=str(creds.storage_state))
-
-            cookies = {
-                c["name"]: c["value"]
-                for c in (await ctx.cookies())
-                if "kitdashboard" in c.get("domain", "")
+        kit_cookies = [
+            {
+                "name": c.name,
+                "value": c.value,
+                "domain": c.domain or "kitdashboard.com",
+                "path": c.path or "/",
+                "secure": bool(c.secure),
+                "httpOnly": False,
+                "sameSite": "Lax",
             }
-            await browser.close()
+            for c in jar
+            if "kitdashboard" in (c.domain or "")
+        ]
+        state = {"cookies": kit_cookies, "origins": []}
+        creds.storage_state.write_text(json.dumps(state, indent=2))
 
-        return "; ".join(f"{k}={v}" for k, v in cookies.items())
+        return "; ".join(f"{c['name']}={c['value']}" for c in kit_cookies)
+
+    def _http_login(self) -> str:
+        """Log in to kitdashboard via pure HTTP (no browser).
+
+        Flow:
+          1. Pre-load saved cookies (deviceId + tsv_* trust token) into jar
+          2. GET /login  → CSRF token + fresh session cookie
+          3. POST creds  → dashboard (success, no 2FA) or 2FA form
+          4. If 2FA:     → wait for code, POST again with verificationCode
+          5. Save all cookies to storage_state JSON
+        """
+        creds = self.credentials
+        jar = http.cookiejar.CookieJar()
+
+        # Pre-load existing cookies so the server recognises the trusted device.
+        # The tsv_* and deviceId cookies tell the server to skip 2FA.
+        self._preload_cookies_into_jar(jar)
+
+        opener = urllib.request.build_opener(
+            urllib.request.HTTPSHandler(context=_SSL),
+            urllib.request.HTTPCookieProcessor(jar),
+        )
+
+        _hdrs = {
+            "User-Agent": _UA,
+            "Accept": "text/html,application/xhtml+xml,*/*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Origin": _KIT_BASE,
+        }
+
+        # ── Step 1: GET login page ────────────────────────────────────────────
+        resp = opener.open(
+            urllib.request.Request(f"{_KIT_BASE}/", headers=_hdrs), timeout=15
+        )
+        html = resp.read().decode("utf-8", errors="replace")
+        csrf_m = re.search(r'name="_csrf"\s+value="([^"]+)"', html)
+        if not csrf_m:
+            raise RuntimeError("Could not find CSRF token on login page")
+        csrf = csrf_m.group(1)
+
+        # ── Step 2: POST credentials ─────────────────────────────────────────
+        data = urllib.parse.urlencode({
+            "_csrf": csrf,
+            "LoginForm[username]": creds.email,
+            "LoginForm[password]": creds.password,
+            "LoginForm[rememberMe]": "1",
+            "LoginForm[twoStepVerificationId]": "",
+        }).encode()
+        resp2 = opener.open(
+            urllib.request.Request(
+                f"{_KIT_BASE}/login",
+                data=data,
+                headers={**_hdrs,
+                          "Content-Type": "application/x-www-form-urlencoded",
+                          "Referer": f"{_KIT_BASE}/login"},
+            ),
+            timeout=15,
+        )
+        html2 = resp2.read().decode("utf-8", errors="replace")
+
+        # Check if logged in already (no 2FA)
+        if "verificationCode" not in html2:
+            return self._save_session_cookies(jar)
+
+        # ── Step 3: 2FA required ─────────────────────────────────────────────
+        vid_m = re.search(
+            r'name="LoginForm\[twoStepVerificationId\]"\s+value="([^"]+)"', html2
+        )
+        csrf2_m = re.search(r'name="_csrf"\s+value="([^"]+)"', html2)
+        if not vid_m or not csrf2_m:
+            raise RuntimeError("Could not parse 2FA form fields")
+        verification_id = vid_m.group(1)
+        csrf2 = csrf2_m.group(1)
+
+        code = self._get_2fa_code()
+
+        data3 = urllib.parse.urlencode({
+            "_csrf": csrf2,
+            "LoginForm[username]": creds.email,
+            "LoginForm[password]": creds.password,
+            "LoginForm[rememberMe]": "1",
+            "LoginForm[twoStepVerificationId]": verification_id,
+            "LoginForm[verificationCode]": code,
+        }).encode()
+        opener.open(
+            urllib.request.Request(
+                f"{_KIT_BASE}/login",
+                data=data3,
+                headers={**_hdrs,
+                          "Content-Type": "application/x-www-form-urlencoded",
+                          "Referer": f"{_KIT_BASE}/login"},
+            ),
+            timeout=15,
+        )
+
+        return self._save_session_cookies(jar)
+
+    def _get_2fa_code(self) -> str:
+        """Return 2FA code from credentials or wait for it via file bridge."""
+        if self.credentials.verification_code:
+            return self.credentials.verification_code
+
+        # File bridge: write trigger, poll for code
+        tmp = self.credentials.storage_state.parent
+        trigger = tmp / "2fa_requested.txt"
+        code_file = tmp / "2fa_code.txt"
+        code_file.unlink(missing_ok=True)
+        trigger.write_text(str(int(time.time())))
+        print("[2FA] Waiting for 2FA code (reading from Gmail automatically)...")
+
+        deadline = time.time() + 90
+        while time.time() < deadline:
+            if code_file.exists():
+                code = code_file.read_text().strip()
+                code_file.unlink(missing_ok=True)
+                trigger.unlink(missing_ok=True)
+                print(f"[2FA] Code received: {code}")
+                return code
+            time.sleep(2)
+
+        raise RuntimeError(
+            "2FA timeout: no code received within 90 s. "
+            f"Write code to {code_file} or pass --verification-code."
+        )
 
     # ----------------------------------------------------------- API helper
 
