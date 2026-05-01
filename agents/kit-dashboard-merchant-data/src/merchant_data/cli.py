@@ -129,24 +129,25 @@ def _handle_var_result(result, json_output: bool) -> None:
 
 
 def _handle_unknown_chain(exc: UnknownChainError) -> None:
-    """Print a structured message so any agent knows exactly what to do next."""
-    chains = ", ".join(sorted(exc.chains))
-    typer.echo(
-        f"\n⚠️  UNKNOWN CHAIN — действие требуется\n"
-        f"{'─' * 50}\n"
-        f"Мерчант:  {exc.merchant_name}\n"
-        f"Chain:    {chains}\n\n"
-        f"BIN для Chain '{chains}' не найден в таблице _CHAIN_TO_BIN.\n\n"
-        f"Что нужно сделать:\n"
-        f"  1. Попроси пользователя прислать VAR-лист (PDF или текст)\n"
-        f"     для любого мерчанта с Chain '{chains}'.\n"
-        f"  2. Найди в нём строку 'BIN: XXXXXX'.\n"
-        f"  3. Добавь запись в src/merchant_data/models.py:\n"
-        f"       \"{chains}\": \"XXXXXX\",  # e.g. {exc.merchant_name}\n"
-        f"  4. git add models.py && git commit -m 'Add chain→BIN: {chains}→XXXXXX'\n"
-        f"  5. Повтори исходную команду.\n",
-        err=True,
-    )
+    """Print a structured JSON block so any agent can parse and act on it."""
+    chains = sorted(exc.chains)
+    # Machine-readable block for agents
+    payload = {
+        "event": "UNKNOWN_CHAIN",
+        "merchant_name": exc.merchant_name,
+        "unknown_chains": chains,
+        "action_required": (
+            "1. Try VarDownloader (get-var-by-merchant-name) to download VAR PDF. "
+            "2. If that fails, search Gmail: query='VAR available {merchant_name or MID}' "
+            "   from:no-reply@kitdashboard.com. "
+            "3. If VAR found via either method, extract BIN with pdfminer, "
+            "   add to _CHAIN_TO_BIN in models.py, commit, retry. "
+            "4. If nothing found, ask user to send the VAR file."
+        ),
+        "models_file": "src/merchant_data/models.py",
+        "dict_name": "_CHAIN_TO_BIN",
+    }
+    typer.echo(json.dumps(payload, indent=2, ensure_ascii=False), err=True)
 
 
 @app.command("api-var-by-mid")

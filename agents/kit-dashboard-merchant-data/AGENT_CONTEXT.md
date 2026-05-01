@@ -137,33 +137,100 @@ _CHAIN_TO_BIN = {
 
 Таблица выведена из анализа 11+ реальных VAR-листов (май 2026).
 
-### ⚠️ Если встретился неизвестный Chain
+### ⚠️ Если встретился неизвестный Chain — полный автоматический протокол
 
-Если `terminal.chain` не найден в `_CHAIN_TO_BIN`, агент **обязан**:
+CLI вернёт exit code **2** и JSON в stderr:
+```json
+{
+  "event": "UNKNOWN_CHAIN",
+  "merchant_name": "...",
+  "unknown_chains": ["XXXXXX"],
+  "action_required": "..."
+}
+```
 
-1. Сообщить пользователю:
-   > "Встречен новый Chain: `{chain}`. BIN для него неизвестен.
-   > Пожалуйста, пришли VAR-лист для любого мерчанта с этим Chain
-   > (PDF или текст), чтобы я мог обновить таблицу."
+Агент **обязан** выполнить следующие шаги **по порядку**, переходя
+к следующему только если предыдущий не дал результата:
 
-2. Дождаться VAR-листа от пользователя.
+---
 
-3. Найти в нём строку `BIN: XXXXXX` и строку `Chain: YYYYYY`.
+#### Шаг 1: Попробовать скачать VAR PDF через VarDownloader
 
-4. Добавить новую запись в `_CHAIN_TO_BIN` в файле
-   `src/merchant_data/models.py`:
-   ```python
-   "YYYYYY": "XXXXXX",   # e.g. <merchant name>
-   ```
+```bash
+merchant get-var-by-merchant-name "{merchant_name}" --save-dir ./tmp/var_learn
+```
 
-5. Закоммитить:
-   ```bash
-   git add src/merchant_data/models.py
-   git commit -m "Add chain→BIN mapping: {chain}→{bin} ({merchant name})"
-   git push origin main
-   ```
+Если PDF скачан → перейти к **Шагу 4**.
 
-6. Повторить исходный запрос — теперь BIN будет вычислен корректно.
+---
+
+#### Шаг 2: Поискать уведомление в Gmail
+
+Использовать Gmail MCP (`search_threads`) с запросом:
+```
+from:no-reply@kitdashboard.com subject:"VAR available" "{merchant_name}"
+```
+или по MID если известен:
+```
+from:no-reply@kitdashboard.com subject:"VAR available" "{MID}"
+```
+
+Если письмо найдено — VAR есть на kitdashboard, но VarDownloader не смог
+его получить. Попробовать снова с явным логином:
+```bash
+merchant get-var-by-merchant-name "{merchant_name}" --verification-code {если нужно}
+```
+
+Если PDF получен → перейти к **Шагу 4**.
+
+---
+
+#### Шаг 3: Диалог с пользователем
+
+Если ни VarDownloader, ни Gmail не дали результата:
+
+> "Встречен новый Chain: `{chain}` для мерчанта `{merchant_name}`.
+> BIN для него неизвестен и не удалось найти VAR автоматически.
+> Пожалуйста, пришли VAR-лист (PDF-файл или текст) для этого мерчанта
+> или любого другого с Chain `{chain}`."
+
+Дождаться ответа, взять файл/текст и перейти к **Шагу 4**.
+
+---
+
+#### Шаг 4: Извлечь BIN из VAR PDF и обновить таблицу
+
+```python
+from pdfminer.high_level import extract_text
+import re
+text = extract_text("path/to/var.pdf")
+bin_val = re.search(r"BIN:\s*(\d+)", text).group(1)
+chain_val = re.search(r"Chain:\s*(\d+)", text).group(1)
+```
+
+Добавить в `src/merchant_data/models.py` в словарь `_CHAIN_TO_BIN`:
+```python
+"{chain_val}": "{bin_val}",   # e.g. {merchant_name}
+```
+
+Закоммитить:
+```bash
+git add src/merchant_data/models.py
+git commit -m "Learn chain→BIN: {chain_val}→{bin_val} ({merchant_name})"
+git push origin main
+```
+
+---
+
+#### Шаг 5: Повторить исходную команду
+
+```bash
+merchant api-var-by-mid {MID}
+# или
+merchant api-var-by-name "{merchant_name}"
+```
+
+Теперь BIN будет вычислен корректно.
 
 ---
 
@@ -208,6 +275,29 @@ https://kitdashboard.com/merchant/profile/view-var-sheet?id={merchantAccountId}&
 > ⚠️ `merchantAccountId` ≠ `merchant.id` из API.
 > `merchantAccountId` = `processing.id` из API (поле `merchant.dbas[0].processing.id`).
 > Код получает его из HTML профиль-страницы, а не из API напрямую.
+
+---
+
+## Gmail коннектор
+
+Доступен MCP с инструментами `search_threads` и `get_thread`.
+
+**Уведомления о VAR-листах** приходят от `no-reply@kitdashboard.com`
+с темой `"VAR available"` и содержат MID и DBA в теле письма.
+Они **не содержат PDF-вложение** — только уведомление что VAR загружен.
+
+Полезные запросы:
+```
+# Найти VAR для конкретного мерчанта
+from:no-reply@kitdashboard.com subject:"VAR available" "El Camino"
+from:no-reply@kitdashboard.com subject:"VAR available" "201100300996"
+
+# Все VAR-уведомления
+from:no-reply@kitdashboard.com subject:"VAR available"
+
+# 2FA коды (если нужен код для логина)
+from:no-reply@kitdashboard.com subject:"verification" newer_than:5m
+```
 
 ---
 
