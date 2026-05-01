@@ -38,6 +38,7 @@ class MerchantResult:
     principal_name: str
     phone: str
     email: str
+    business_address: str = ""
     raw_fields: dict[str, str] = field(default_factory=dict)
 
     def summary(self) -> str:
@@ -47,6 +48,7 @@ class MerchantResult:
             f"Principal:  {self.principal_name or '(not found)'}",
             f"Phone:      {self.phone or '(not found)'}",
             f"Email:      {self.email or '(not found)'}",
+            f"Address:    {self.business_address or '(not found)'}",
             f"Profile:    {self.profile_url}",
         ]
         return "\n".join(lines)
