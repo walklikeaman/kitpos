@@ -35,6 +35,22 @@ _SSL = _ssl_ctx()
 
 from merchant_data.models import MerchantResult, VarData, _CHAIN_TO_BIN, _STATE_CODES
 
+
+class UnknownChainError(Exception):
+    """Raised when a terminal's Chain value is not in the _CHAIN_TO_BIN table.
+
+    The agent must ask the user for a VAR sheet for this merchant so the
+    mapping can be learned and added to models.py.
+    """
+    def __init__(self, chains: set[str], merchant_name: str) -> None:
+        self.chains = chains
+        self.merchant_name = merchant_name
+        super().__init__(
+            f"Unknown Chain value(s) {chains} for merchant '{merchant_name}'. "
+            "BIN cannot be determined. Please provide a VAR sheet (PDF or text) "
+            "for any merchant with this Chain so the table can be updated."
+        )
+
 _BASE = "https://dashboard.maverickpayments.com/api"
 _PER_PAGE = 50  # API maximum
 
@@ -127,6 +143,15 @@ class MerchantAPIService:
         terminals = terminals_data.get("items", [])
         if not terminals:
             raise RuntimeError(f"No terminals for merchant id={merchant_id}")
+
+        # Detect any unknown Chain values before building results
+        unknown_chains = {
+            t.get("chain", "")
+            for t in terminals
+            if t.get("chain") and t.get("chain") not in _CHAIN_TO_BIN
+        }
+        if unknown_chains:
+            raise UnknownChainError(unknown_chains, item.get("name", ""))
 
         result = []
         for t in terminals:

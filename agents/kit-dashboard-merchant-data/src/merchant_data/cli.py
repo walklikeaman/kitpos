@@ -11,7 +11,7 @@ import typer
 
 from merchant_data.models import KitCredentials
 from merchant_data.services.kit_merchant_lookup import MerchantLookupService
-from merchant_data.services.kit_api import MerchantAPIService
+from merchant_data.services.kit_api import MerchantAPIService, UnknownChainError
 from merchant_data.services.kit_var_downloader import VarDownloader
 
 app = typer.Typer(no_args_is_help=True, help="KIT Dashboard – merchant lookup by ID or name.")
@@ -123,6 +123,32 @@ def _print_var(var_list: list, json_output: bool) -> None:
             typer.echo(v.summary())
 
 
+def _handle_var_result(result, json_output: bool) -> None:
+    """Print VAR results or guide the agent on unknown Chain."""
+    _print_var(result, json_output)
+
+
+def _handle_unknown_chain(exc: UnknownChainError) -> None:
+    """Print a structured message so any agent knows exactly what to do next."""
+    chains = ", ".join(sorted(exc.chains))
+    typer.echo(
+        f"\n⚠️  UNKNOWN CHAIN — действие требуется\n"
+        f"{'─' * 50}\n"
+        f"Мерчант:  {exc.merchant_name}\n"
+        f"Chain:    {chains}\n\n"
+        f"BIN для Chain '{chains}' не найден в таблице _CHAIN_TO_BIN.\n\n"
+        f"Что нужно сделать:\n"
+        f"  1. Попроси пользователя прислать VAR-лист (PDF или текст)\n"
+        f"     для любого мерчанта с Chain '{chains}'.\n"
+        f"  2. Найди в нём строку 'BIN: XXXXXX'.\n"
+        f"  3. Добавь запись в src/merchant_data/models.py:\n"
+        f"       \"{chains}\": \"XXXXXX\",  # e.g. {exc.merchant_name}\n"
+        f"  4. git add models.py && git commit -m 'Add chain→BIN: {chains}→XXXXXX'\n"
+        f"  5. Повтори исходную команду.\n",
+        err=True,
+    )
+
+
 @app.command("api-var-by-mid")
 def api_var_by_mid(
     mid: str = typer.Argument(..., help="12-digit MID, e.g. 201100300996"),
@@ -133,10 +159,13 @@ def api_var_by_mid(
     service = _build_api_service(api_key)
     try:
         result = service.var_data_by_mid(mid)
+    except UnknownChainError as exc:
+        _handle_unknown_chain(exc)
+        raise typer.Exit(2)
     except Exception as exc:
         typer.echo(f"ERROR: {exc}", err=True)
         raise typer.Exit(1)
-    _print_var(result, json_output)
+    _handle_var_result(result, json_output)
 
 
 @app.command("api-var-by-name")
@@ -149,10 +178,13 @@ def api_var_by_name(
     service = _build_api_service(api_key)
     try:
         result = service.var_data_by_name(name)
+    except UnknownChainError as exc:
+        _handle_unknown_chain(exc)
+        raise typer.Exit(2)
     except Exception as exc:
         typer.echo(f"ERROR: {exc}", err=True)
         raise typer.Exit(1)
-    _print_var(result, json_output)
+    _handle_var_result(result, json_output)
 
 
 # ──────────────────────── Browser commands (kept for VAR download) ────────────
