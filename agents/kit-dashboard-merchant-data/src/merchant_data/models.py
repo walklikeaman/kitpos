@@ -136,6 +136,110 @@ class VarData:
         }
 
 
+# Reverse map: "California" → 5
+_STATE_NAME_TO_ID: dict[str, int] = {v: k for k, v in _STATE_CODES.items()}
+
+
+@dataclass(slots=True)
+class OnboardingAddress:
+    street: str
+    city: str
+    state: str  # full name, e.g. "California"
+    zip: str
+    country_id: int = 199  # USA
+
+
+@dataclass(slots=True)
+class OnboardingPrincipal:
+    first_name: str
+    last_name: str
+    title: str  # "Owner", "CEO", "President", etc.
+    ssn: str    # "XXX-XX-XXXX"
+    dob: str    # "YYYY-MM-DD"
+    email: str
+    phone: str
+    address: OnboardingAddress
+    ownership_percentage: int = 100
+    dl_number: str | None = None
+    dl_expiration: str | None = None  # "YYYY-MM-DD"
+    dl_state: str | None = None       # full state name
+    nationality_id: int = 199         # USA
+
+
+@dataclass(slots=True)
+class NewMerchantProfile:
+    # Business identity
+    legal_name: str
+    dba_name: str
+    entity_type: str        # "LLC", "Corporation", "SoleProprietorship", "Partnership"
+    ein: str                # federal tax ID, digits only
+    founded_date: str       # "YYYY-MM-DD"
+    mcc_id: int             # internal MCC ID (use MerchantOnboardingService.search_mcc())
+    service_description: str
+    # Addresses
+    business_address: OnboardingAddress
+    dba_same_as_company: bool = True
+    # Contact
+    business_phone: str = ""
+    business_email: str = ""
+    # Principals (at least one required)
+    principals: list[OnboardingPrincipal] = field(default_factory=list)
+    # Processing volumes
+    monthly_volume: float = 50000.0
+    avg_transaction: float = 50.0
+    max_transaction: float = 500.0
+    # Card types
+    accept_credit: bool = True
+    accept_pin_debit: bool = True
+    accept_ebt: bool = False
+    accept_amex: bool = False
+    # Business details
+    refund_policy: str = "No refund policy"
+    already_processing: bool = False
+    has_been_terminated: bool = False
+    has_bankruptcy: bool = False
+    is_seasonal: bool = False
+    inventory_on_site: bool = True
+    # Banking (for processing account)
+    routing_number: str = ""
+    account_number: str = ""
+    # API campaign (1579 = KIT POS InterCharge Plus)
+    campaign_id: int = 1579
+
+
+@dataclass(slots=True)
+class OnboardingResult:
+    app_id: int
+    status: str
+    message: str = ""
+    url: str = ""
+    validation_errors: dict = field(default_factory=dict)
+
+    def summary(self) -> str:
+        lines = [
+            f"Application ID: {self.app_id}",
+            f"Status:         {self.status}",
+        ]
+        if self.message:
+            lines.append(f"Message:        {self.message}")
+        if self.url:
+            lines.append(f"URL:            {self.url}")
+        if self.validation_errors:
+            lines.append("Validation errors:")
+            for k, v in self.validation_errors.items():
+                lines.append(f"  {k}: {v}")
+        return "\n".join(lines)
+
+    def to_dict(self) -> dict:
+        return {
+            "app_id": self.app_id,
+            "status": self.status,
+            "message": self.message,
+            "url": self.url,
+            "validation_errors": self.validation_errors,
+        }
+
+
 @dataclass(slots=True)
 class MerchantResult:
     merchant_id: str
