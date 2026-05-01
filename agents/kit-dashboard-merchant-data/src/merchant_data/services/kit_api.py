@@ -33,7 +33,7 @@ def _ssl_ctx() -> ssl.SSLContext:
 
 _SSL = _ssl_ctx()
 
-from merchant_data.models import MerchantResult
+from merchant_data.models import MerchantResult, VarData, _CHAIN_TO_BIN, _STATE_CODES
 
 _BASE = "https://dashboard.maverickpayments.com/api"
 _PER_PAGE = 50  # API maximum
@@ -75,6 +75,91 @@ class MerchantAPIService:
                 break
             page += 1
         raise RuntimeError(f"No merchant found with MID: {mid}")
+
+    def var_data_by_name(self, name: str) -> list[VarData]:
+        """Return VAR data for all terminals of the first merchant matching name."""
+        params = {"filter[name][like]": name, "per-page": 5}
+        data = self._get("/merchant", params)
+        items = data.get("items", [])
+        if not items:
+            raise RuntimeError(f"No merchant found for name: {name!r}")
+        return self._var_data_for_merchant(items[0])
+
+    def var_data_by_mid(self, mid: str) -> list[VarData]:
+        """Return VAR data for all terminals of the merchant with this MID."""
+        mid_int = int(mid)
+        page = 1
+        while True:
+            data = self._get("/merchant", {"per-page": _PER_PAGE, "page": page})
+            for item in data.get("items", []):
+                for dba in item.get("dbas", []):
+                    if (dba.get("processing") or {}).get("mid") == mid_int:
+                        return self._var_data_for_merchant(item)
+            meta = data.get("_meta", {})
+            if page >= meta.get("pageCount", 1):
+                break
+            page += 1
+        raise RuntimeError(f"No merchant found with MID: {mid}")
+
+    def var_data_by_internal_id(self, internal_id: int | str) -> list[VarData]:
+        """Return VAR data for all terminals of the merchant with this internal id."""
+        data = self._get(f"/merchant/{internal_id}", {})
+        return self._var_data_for_merchant(data)
+
+    def _var_data_for_merchant(self, item: dict) -> list[VarData]:
+        """Build VarData list (one per terminal) from raw API merchant dict."""
+        merchant_id = item["id"]
+        dba = (item.get("dbas") or [{}])[0]
+        proc = dba.get("processing") or {}
+        addr = dba.get("address") or {}
+        contact = dba.get("customerServiceContact") or {}
+
+        # State: API returns [int], look up name
+        state_raw = addr.get("state", [])
+        state_code = state_raw[0] if isinstance(state_raw, list) and state_raw else state_raw
+        state_name = _STATE_CODES.get(state_code, str(state_code))
+
+        # Fetch all terminals for this merchant
+        terminals_data = self._get(
+            "/terminal",
+            {"filter[merchant.id][eq]": merchant_id, "per-page": 50},
+        )
+        terminals = terminals_data.get("items", [])
+        if not terminals:
+            raise RuntimeError(f"No terminals for merchant id={merchant_id}")
+
+        result = []
+        for t in terminals:
+            chain = t.get("chain", "")
+            bin_num = _CHAIN_TO_BIN.get(chain, "unknown")
+            result.append(VarData(
+                legal_name=item.get("name", ""),
+                dba=dba.get("name", ""),
+                street=addr.get("street", ""),
+                city=addr.get("city", ""),
+                state=state_name,
+                zip_code=addr.get("zip", ""),
+                phone=contact.get("phone", ""),
+                mid=str(proc.get("mid", "")),
+                mcc=dba.get("mcc", ""),
+                monthly_volume=float(
+                    (proc.get("volumes") or {}).get("monthlyTransactionAmount", 0)
+                ),
+                v_number=t.get("backendProcessorId", ""),
+                terminal_number=int(t.get("tid", 0)),
+                store_number=t.get("storeNumber", ""),
+                location_number=t.get("locationNumber", ""),
+                chain=chain,
+                agent_bank=t.get("agentBank", ""),
+                bin=bin_num,
+                accept_visa_mc=t.get("acceptVisa") == "Yes",
+                accept_pin_debit=t.get("acceptPinDebit") == "Yes",
+                accept_gift_card=t.get("acceptGiftCard") == "Yes",
+                accept_amex=t.get("acceptAmericanExpress") == "Yes",
+                accept_discover=t.get("acceptDiscover") == "Yes",
+                accept_ebt=t.get("acceptEbt") == "Yes",
+            ))
+        return result
 
     def lookup_by_internal_id(self, internal_id: int | str) -> MerchantResult:
         """Direct lookup by internal API id (same as ?id= in profile URL)."""

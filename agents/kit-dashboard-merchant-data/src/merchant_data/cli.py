@@ -111,6 +111,50 @@ def api_by_internal_id(
     _print_result(result, json_output)
 
 
+# ──────────────────────── API VAR commands (no session, no browser) ──────────
+
+def _print_var(var_list: list, json_output: bool) -> None:
+    if json_output:
+        typer.echo(json.dumps([v.to_dict() for v in var_list], indent=2, ensure_ascii=False))
+    else:
+        for i, v in enumerate(var_list):
+            if len(var_list) > 1:
+                typer.echo(f"\n─── Terminal {i+1} of {len(var_list)} ───")
+            typer.echo(v.summary())
+
+
+@app.command("api-var-by-mid")
+def api_var_by_mid(
+    mid: str = typer.Argument(..., help="12-digit MID, e.g. 201100300996"),
+    api_key: Optional[str] = typer.Option(None, envvar="KIT_API_KEY"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """[API] Get VAR sheet data by MID — pure API, no browser, no session."""
+    service = _build_api_service(api_key)
+    try:
+        result = service.var_data_by_mid(mid)
+    except Exception as exc:
+        typer.echo(f"ERROR: {exc}", err=True)
+        raise typer.Exit(1)
+    _print_var(result, json_output)
+
+
+@app.command("api-var-by-name")
+def api_var_by_name(
+    name: str = typer.Argument(..., help="Merchant name or partial name"),
+    api_key: Optional[str] = typer.Option(None, envvar="KIT_API_KEY"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """[API] Get VAR sheet data by merchant name — pure API, no browser, no session."""
+    service = _build_api_service(api_key)
+    try:
+        result = service.var_data_by_name(name)
+    except Exception as exc:
+        typer.echo(f"ERROR: {exc}", err=True)
+        raise typer.Exit(1)
+    _print_var(result, json_output)
+
+
 # ──────────────────────── Browser commands (kept for VAR download) ────────────
 
 @app.command("by-id")
