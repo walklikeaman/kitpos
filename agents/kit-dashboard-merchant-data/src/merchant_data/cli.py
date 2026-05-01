@@ -12,6 +12,7 @@ import typer
 from merchant_data.models import KitCredentials
 from merchant_data.services.kit_merchant_lookup import MerchantLookupService
 from merchant_data.services.kit_api import MerchantAPIService
+from merchant_data.services.kit_var_downloader import VarDownloader
 
 app = typer.Typer(no_args_is_help=True, help="KIT Dashboard – merchant lookup by ID or name.")
 
@@ -152,6 +153,48 @@ def lookup_by_name(
         typer.echo(f"ERROR: {exc}", err=True)
         raise typer.Exit(1)
     _print_result(result, json_output)
+
+
+@app.command("get-var-by-mid")
+def get_var_by_mid(
+    mid: str = typer.Argument(..., help="12-digit KIT Merchant ID, e.g. 201100300996"),
+    api_key: Optional[str] = typer.Option(None, envvar="KIT_API_KEY"),
+    email: Optional[str] = typer.Option(None, envvar="KIT_EMAIL"),
+    password: Optional[str] = typer.Option(None, envvar="KIT_PASSWORD"),
+    verification_code: Optional[str] = typer.Option(None, "--verification-code"),
+    headless: bool = typer.Option(True),
+    save_dir: Path = typer.Option(Path("downloads"), "--save-dir"),
+) -> None:
+    """[API+Session] Download VAR PDF by MID — API finds terminal, session downloads PDF."""
+    creds = _build_credentials(email, password, verification_code)
+    service = VarDownloader(_build_api_service(api_key).api_key, creds, headless=headless)
+    try:
+        result = service.download_by_mid(mid, save_dir)
+    except Exception as exc:
+        typer.echo(f"ERROR: {exc}", err=True)
+        raise typer.Exit(1)
+    typer.echo(result.summary())
+
+
+@app.command("get-var-by-merchant-name")
+def get_var_by_merchant_name(
+    name: str = typer.Argument(..., help="Merchant name, e.g. 'El Camino'"),
+    api_key: Optional[str] = typer.Option(None, envvar="KIT_API_KEY"),
+    email: Optional[str] = typer.Option(None, envvar="KIT_EMAIL"),
+    password: Optional[str] = typer.Option(None, envvar="KIT_PASSWORD"),
+    verification_code: Optional[str] = typer.Option(None, "--verification-code"),
+    headless: bool = typer.Option(True),
+    save_dir: Path = typer.Option(Path("downloads"), "--save-dir"),
+) -> None:
+    """[API+Session] Download VAR PDF by merchant name — API finds terminal, session downloads PDF."""
+    creds = _build_credentials(email, password, verification_code)
+    service = VarDownloader(_build_api_service(api_key).api_key, creds, headless=headless)
+    try:
+        result = service.download_by_name(name, save_dir)
+    except Exception as exc:
+        typer.echo(f"ERROR: {exc}", err=True)
+        raise typer.Exit(1)
+    typer.echo(result.summary())
 
 
 @app.command("get-var-by-id")
