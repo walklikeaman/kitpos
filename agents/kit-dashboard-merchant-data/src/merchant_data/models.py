@@ -6,8 +6,9 @@ from pathlib import Path
 # BIN is determined by Chain (acquiring bank group), not per merchant.
 # Derived from comparing multiple VAR sheets.
 _CHAIN_TO_BIN: dict[str, str] = {
-    "081960": "422108",
-    "261960": "442114",
+    "081960": "422108",  # FFB Bank / main KIT POS chain
+    "261960": "442114",  # e.g. Ali Baba Smoke and Gift Shop
+    "051960": "403982",  # e.g. Holy Smokes Smoke Shop
 }
 
 _STATE_CODES: dict[int, str] = {
