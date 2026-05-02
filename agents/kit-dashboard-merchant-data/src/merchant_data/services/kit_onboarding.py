@@ -46,6 +46,12 @@ from merchant_data.models import (
 
 _BASE = "https://kitdashboard.com/api"
 
+# Document type IDs (used in the `about` field of boarding application documents)
+# Discovered by inspecting existing boarding applications via GET /boarding-application/{id}
+DOCUMENT_TYPE_VOIDED_CHECK = 6
+DOCUMENT_TYPE_DRIVER_LICENSE = 18
+DOCUMENT_TYPE_OTHER = 3  # generic "Other" category
+
 
 def _ssl_ctx() -> ssl.SSLContext:
     try:
@@ -401,6 +407,7 @@ class MerchantOnboardingService:
         app_id: int,
         attachment_id: int,
         principal_id: int | None = None,
+        doc_type_id: int | None = None,
     ) -> dict:
         """Link an uploaded attachment to a boarding application.
 
@@ -408,14 +415,57 @@ class MerchantOnboardingService:
             app_id: Boarding application ID.
             attachment_id: ID returned by upload_attachment().
             principal_id: Optional principal to associate the document with.
+            doc_type_id: Document type integer ID. Use module constants:
+                DOCUMENT_TYPE_VOIDED_CHECK = 6
+                DOCUMENT_TYPE_DRIVER_LICENSE = 18
+                DOCUMENT_TYPE_OTHER = 3
 
         Returns:
             The document link object from the API.
+
+        Note:
+            To update the type on an already-linked document, call
+            set_document_type(app_id, attachment_id, doc_type_id).
         """
         payload: dict[str, Any] = {"attachment": {"id": attachment_id}}
         if principal_id is not None:
             payload["principal"] = {"id": principal_id}
+        if doc_type_id is not None:
+            payload["about"] = [doc_type_id]
         return self._request("POST", f"/boarding-application/{app_id}/document", body=payload)
+
+    def set_document_type(
+        self,
+        app_id: int,
+        attachment_id: int,
+        doc_type_id: int,
+        principal_id: int | None = None,
+    ) -> dict:
+        """Set or update the document type for an already-linked document.
+
+        The `about` field uses integer IDs (not strings):
+            DOCUMENT_TYPE_VOIDED_CHECK   = 6
+            DOCUMENT_TYPE_DRIVER_LICENSE = 18
+            DOCUMENT_TYPE_OTHER          = 3
+
+        Args:
+            app_id: Boarding application ID.
+            attachment_id: Attachment ID of the already-linked document.
+            doc_type_id: Integer document type ID.
+            principal_id: Principal to associate (preserves existing if None).
+
+        Returns:
+            Updated document object from the API.
+        """
+        payload: dict[str, Any] = {
+            "attachment": {"id": attachment_id},
+            "about": [doc_type_id],
+        }
+        if principal_id is not None:
+            payload["principal"] = {"id": principal_id}
+        return self._request(
+            "PUT", f"/boarding-application/{app_id}/document/{attachment_id}", body=payload
+        )
 
     def remove_document(self, app_id: int, attachment_id: int) -> bool:
         """Remove a document link from a boarding application.
@@ -444,16 +494,27 @@ class MerchantOnboardingService:
         source: Union[str, Path, bytes],
         filename: str | None = None,
         principal_id: int | None = None,
+        doc_type_id: int | None = None,
     ) -> int:
         """Upload a file and immediately link it to a boarding application.
 
         Convenience wrapper around upload_attachment() + link_document().
 
+        Args:
+            app_id: Boarding application ID.
+            source: File path or raw bytes.
+            filename: Override filename.
+            principal_id: Principal to associate with.
+            doc_type_id: Document type integer ID. Use module constants:
+                DOCUMENT_TYPE_VOIDED_CHECK   = 6
+                DOCUMENT_TYPE_DRIVER_LICENSE = 18
+                DOCUMENT_TYPE_OTHER          = 3
+
         Returns:
             attachment_id of the newly uploaded and linked document.
         """
         attachment_id = self.upload_attachment(source, filename)
-        self.link_document(app_id, attachment_id, principal_id)
+        self.link_document(app_id, attachment_id, principal_id, doc_type_id)
         return attachment_id
 
     def search_mcc(self, query: str) -> list[dict]:
