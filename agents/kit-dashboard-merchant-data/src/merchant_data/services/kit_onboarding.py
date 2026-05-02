@@ -6,22 +6,35 @@ Implements the full merchant onboarding flow via:
   PUT  /boarding-application/{id}     → fill all fields
   GET  /boarding-application/{id}/validate → check errors
   GET  /boarding-application/mcc      → MCC lookup by code/description
+  POST /attachment/upload             → upload file, returns attachment id
+  POST /boarding-application/{id}/document → link attachment to application
+  DELETE /boarding-application/{id}/document/{attachment_id} → unlink document
+
+Document upload flow:
+  1. upload_attachment(path_or_bytes, filename) → attachment_id
+  2. link_document(app_id, attachment_id, principal_id) → links to application
+  3. list_documents(app_id) → returns current linked documents
+  4. remove_document(app_id, attachment_id) → removes link
 
 Boarding process:
   1. create_application()  → returns OnboardingResult with app_id
   2. Caller calls validate_application(app_id) to check errors
   3. Caller can call get_application(app_id) to inspect full object
 
-Base URL: https://dashboard.maverickpayments.com/api
+Base URL: https://kitdashboard.com/api
 Auth:     Bearer token (KIT_API_KEY in .env)
 """
 from __future__ import annotations
 
 import json
+import mimetypes
+import os
 import ssl
+import uuid
 import urllib.parse
 import urllib.request
-from typing import Any
+from pathlib import Path
+from typing import Any, Union
 
 from merchant_data.models import (
     NewMerchantProfile,
@@ -31,7 +44,7 @@ from merchant_data.models import (
     _STATE_NAME_TO_ID,
 )
 
-_BASE = "https://dashboard.maverickpayments.com/api"
+_BASE = "https://kitdashboard.com/api"
 
 
 def _ssl_ctx() -> ssl.SSLContext:
@@ -61,26 +74,65 @@ class MerchantOnboardingService:
 
     # ── low-level HTTP ────────────────────────────────────────────────────────
 
-    def _request(self, method: str, path: str, body: dict | None = None) -> Any:
-        url = f"{_BASE}/{path.lstrip('/')}"
-        data = json.dumps(body).encode() if body is not None else None
-        req = urllib.request.Request(
-            url,
-            data=data,
-            method=method,
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-                "Referer": "https://kitdashboard.com/",
-                "Origin": "https://kitdashboard.com",
-                "User-Agent": (
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/124.0.0.0 Safari/537.36"
-                ),
-            },
+    @staticmethod
+    def _build_multipart(
+        fields: dict[str, str],
+        file_field: str,
+        filename: str,
+        file_bytes: bytes,
+        content_type: str,
+    ) -> tuple[bytes, str]:
+        """Build a multipart/form-data body. Returns (body_bytes, content_type_header)."""
+        boundary = uuid.uuid4().hex
+        parts: list[bytes] = []
+        for name, value in fields.items():
+            parts.append(
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
+                f"{value}\r\n".encode()
+            )
+        parts.append(
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="{file_field}"; filename="{filename}"\r\n'
+            f"Content-Type: {content_type}\r\n\r\n".encode()
+            + file_bytes
+            + b"\r\n"
         )
+        parts.append(f"--{boundary}--\r\n".encode())
+        return b"".join(parts), f"multipart/form-data; boundary={boundary}"
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        body: dict | None = None,
+        raw_data: bytes | None = None,
+        content_type: str = "application/json",
+    ) -> Any:
+        url = f"{_BASE}/{path.lstrip('/')}"
+        if raw_data is not None:
+            data = raw_data
+        elif body is not None:
+            data = json.dumps(body).encode()
+            content_type = "application/json"
+        else:
+            data = None
+
+        headers: dict[str, str] = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Accept": "application/json",
+            "Referer": "https://kitdashboard.com/",
+            "Origin": "https://kitdashboard.com",
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
+        }
+        if data is not None:
+            headers["Content-Type"] = content_type
+
+        req = urllib.request.Request(url, data=data, method=method, headers=headers)
         try:
             with urllib.request.urlopen(req, context=_SSL) as resp:
                 raw = resp.read().decode()
@@ -274,15 +326,25 @@ class MerchantOnboardingService:
     def validate_application(self, app_id: int) -> dict[str, str]:
         """Return validation errors dict (empty dict = fully valid).
 
-        API returns a dict of {field: message} on errors,
-        or an empty list [] when all fields are valid.
+        The API has a quirk: it returns 422 with body [] when all fields are
+        valid (no errors), and 422 with a dict of {field: message} when there
+        are validation errors.  We distinguish the two by inspecting the body.
         """
         try:
             result = self._request("GET", f"/boarding-application/{app_id}/validate")
             if isinstance(result, dict):
                 return {k: v for k, v in result.items() if isinstance(v, str)}
             return {}  # empty list [] means valid
-        except OnboardingAPIError:
+        except OnboardingAPIError as exc:
+            # 422 with body "[]" → fully valid (API quirk)
+            try:
+                body = json.loads(exc.body)
+                if isinstance(body, list) and len(body) == 0:
+                    return {}
+                if isinstance(body, dict):
+                    return {k: v for k, v in body.items() if isinstance(v, str)}
+            except (json.JSONDecodeError, AttributeError):
+                pass
             return {}
 
     def list_applications(
@@ -296,6 +358,103 @@ class MerchantOnboardingService:
             path += f"&filter[status]={urllib.parse.quote(status)}"
         result = self._request("GET", path)
         return result.get("items", [])
+
+    # ── document upload ───────────────────────────────────────────────────────
+
+    def upload_attachment(
+        self,
+        source: Union[str, Path, bytes],
+        filename: str | None = None,
+    ) -> int:
+        """Upload a file to the KIT attachment store.
+
+        Args:
+            source: File path (str/Path) or raw bytes.
+            filename: Override filename. Defaults to basename of path or 'file'.
+
+        Returns:
+            attachment_id (int) — use this with link_document().
+        """
+        if isinstance(source, (str, Path)):
+            path = Path(source)
+            file_bytes = path.read_bytes()
+            if filename is None:
+                filename = path.name
+        else:
+            file_bytes = source
+            if filename is None:
+                filename = "file"
+
+        mime = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        body, ct_header = self._build_multipart(
+            fields={},
+            file_field="file",
+            filename=filename,
+            file_bytes=file_bytes,
+            content_type=mime,
+        )
+        result = self._request("POST", "/attachment/upload", raw_data=body, content_type=ct_header)
+        return result["id"]
+
+    def link_document(
+        self,
+        app_id: int,
+        attachment_id: int,
+        principal_id: int | None = None,
+    ) -> dict:
+        """Link an uploaded attachment to a boarding application.
+
+        Args:
+            app_id: Boarding application ID.
+            attachment_id: ID returned by upload_attachment().
+            principal_id: Optional principal to associate the document with.
+
+        Returns:
+            The document link object from the API.
+        """
+        payload: dict[str, Any] = {"attachment": {"id": attachment_id}}
+        if principal_id is not None:
+            payload["principal"] = {"id": principal_id}
+        return self._request("POST", f"/boarding-application/{app_id}/document", body=payload)
+
+    def remove_document(self, app_id: int, attachment_id: int) -> bool:
+        """Remove a document link from a boarding application.
+
+        Args:
+            app_id: Boarding application ID.
+            attachment_id: Attachment ID to unlink.
+
+        Returns:
+            True if successfully removed.
+        """
+        try:
+            result = self._request("DELETE", f"/boarding-application/{app_id}/document/{attachment_id}")
+            return bool(result)
+        except OnboardingAPIError:
+            return False
+
+    def list_documents(self, app_id: int) -> list[dict]:
+        """Return all documents currently linked to a boarding application."""
+        app = self._request("GET", f"/boarding-application/{app_id}")
+        return app.get("documents", [])
+
+    def upload_and_link_document(
+        self,
+        app_id: int,
+        source: Union[str, Path, bytes],
+        filename: str | None = None,
+        principal_id: int | None = None,
+    ) -> int:
+        """Upload a file and immediately link it to a boarding application.
+
+        Convenience wrapper around upload_attachment() + link_document().
+
+        Returns:
+            attachment_id of the newly uploaded and linked document.
+        """
+        attachment_id = self.upload_attachment(source, filename)
+        self.link_document(app_id, attachment_id, principal_id)
+        return attachment_id
 
     def search_mcc(self, query: str) -> list[dict]:
         """Search MCCs by code number or description keyword.
