@@ -319,6 +319,120 @@ from:no-reply@kitdashboard.com subject:"verification" newer_than:5m
 
 ---
 
+## Онбординг мерчантов: обязательные правила
+
+> Эти правила применяются при создании/обновлении заявки через `MerchantOnboardingService`.
+
+### Тип бизнеса (entity_type)
+
+Определяется из документов мерчанта (DBA/Voided Check/Договор). Правила:
+
+| Что написано в документах | entity_type |
+|---|---|
+| "Inc", "Corp", "Corporation" | `"Corporation"` |
+| "LLC" | `"LLC"` |
+| "Sole proprietor" / физлицо без юрлица | `"SoleProprietorship"` |
+| "Partnership", "LP", "LLP" | `"Partnership"` |
+
+Никогда не угадывать — брать точно из документов.
+
+### Звание принципала (title)
+
+- **По умолчанию: `"CEO"`** — если в документах не указано иное.
+- Если явно написано President, Manager, Partner — использовать это.
+- **Никогда не использовать `"Owner"`** — это устаревшее поле, API принимает, но KIT не использует.
+- Для LLC с одним владельцем: `"CEO"` (не "Member", не "Manager").
+
+### Платёжные системы (intendedUsage)
+
+По умолчанию при онбординге **все три** должны быть включены:
+
+| Поле | Дефолт | Примечание |
+|---|---|---|
+| `accept_credit` | `True` | VISA, MC, Discover |
+| `accept_pin_debit` | `True` | PIN Debit |
+| `accept_amex` | **`True`** | AMEX OptBlue — **обязательно включать** |
+| `accept_ebt` | `False` | Только если мерчант явно запросил |
+
+> **AMEX OptBlue** = поле `processing.intendedUsage.amex.optBlue = "Yes"`.
+> Включается через `profile.accept_amex = True`.
+
+### Имя принципала
+
+- **Не использовать среднее имя** — только First + Last.
+- Брать из Driver's License: поле LAST NAME + FIRST NAME.
+- Игнорировать отчество/middle name даже если оно есть в документе.
+
+### Документы (Driver License и Voided Check)
+
+- DL сканируется через `pdf2image` → PNG, затем визуальный OCR (pdfplumber ломается на защищённых DL).
+- Voided Check: Routing + Account из чека. **Routing всегда 9 цифр.**
+- Типы документов задаются через `set_document_type()` (integer ID, не строка):
+  - `DOCUMENT_TYPE_VOIDED_CHECK = 6`
+  - `DOCUMENT_TYPE_DRIVER_LICENSE = 18`
+  - `DOCUMENT_TYPE_OTHER = 3`
+
+### Стандартные параметры заявки (KIT POS)
+
+```python
+campaign_id = 1579       # KIT POS InterCharge Plus
+mcc_id = 5912            # Drug Stores / Convenience (самый частый для KIT POS)
+equipment_used = "KIT POS"
+building_type = "Office Building"
+building_ownership = "Rents"
+area_zoned = "Commercial"
+sales_split = swiped=100, mail=0, internet=0
+```
+
+---
+
+## Система логирования запусков (runs/)
+
+**Каждый** запуск онбординга (успешный или нет) обязан быть залогирован:
+
+```python
+from merchant_data.services.run_logger import RunLogger
+log = RunLogger()
+
+# При успехе:
+log.success(
+    merchant_name="...",
+    app_id=756692,
+    source_pdf="file.pdf",
+    principal_name="Ali Alomari",
+    entity_type="Corporation",
+    documents=["driver_license.png", "voided_check.png"],
+    notes="Любые нестандартные ситуации или решения",
+)
+
+# При ошибке:
+log.failure(
+    merchant_name="...",
+    source_pdf="file.pdf",
+    reason="Не удалось распарсить EIN",
+    error="re.search returned None",
+    app_id=None,  # если заявка была создана но упала
+)
+```
+
+Файл логов: `runs/runs.jsonl` (append-only JSONL, не коммитится в git).
+
+Просмотр истории:
+```bash
+python3 -c "
+import sys; sys.path.insert(0, 'src')
+from merchant_data.services.run_logger import RunLogger
+print(RunLogger().summary())
+"
+```
+
+**Правила:**
+- Логировать ВСЕГДА — даже если заявка создана но не заполнена.
+- В `notes` писать всё нестандартное: что было не так, как решили.
+- Логи — основа для улучшений. Без логов — нет обучения.
+
+---
+
 ## Что не нужно делать
 
 - **Не модифицировать** папку `kit-dashboard-agent/` (read-only reference)
@@ -339,3 +453,10 @@ from:no-reply@kitdashboard.com subject:"verification" newer_than:5m
 | 2026-05-01 | HTTP-логин без браузера, device trust для пропуска 2FA |
 | 2026-05-01 | `api-var-by-mid/name`: все VAR-данные из API, PDF не нужен |
 | 2026-05-01 | Таблица Chain→BIN: 3 значения из анализа 11 VAR-листов |
+| 2026-05-02 | Онбординг: upload_attachment, link_document, set_document_type (about=[int]) |
+| 2026-05-02 | Онбординг: исправлен base URL на kitdashboard.com |
+| 2026-05-02 | Онбординг: document type IDs: 6=VoidedCheck, 18=DriverLicense |
+| 2026-05-02 | Онбординг: дефолт accept_amex=True (AMEX OptBlue включён по умолчанию) |
+| 2026-05-02 | Правила: title дефолт CEO, не Owner; no middle name |
+| 2026-05-02 | RunLogger: система логирования запусков (runs/runs.jsonl) |
+| 2026-05-02 | Первый успешный полный запуск: El Camino Mart Inc → app_id=756692 |

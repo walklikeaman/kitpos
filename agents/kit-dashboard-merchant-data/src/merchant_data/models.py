@@ -153,7 +153,7 @@ class OnboardingAddress:
 class OnboardingPrincipal:
     first_name: str
     last_name: str
-    title: str  # "Owner", "CEO", "President", etc.
+    title: str  # "CEO" by default. Use "LLC Manager" for LLC, "President" if stated. Never use "Owner".
     ssn: str    # "XXX-XX-XXXX"
     dob: str    # "YYYY-MM-DD"
     email: str
@@ -192,7 +192,7 @@ class NewMerchantProfile:
     accept_credit: bool = True
     accept_pin_debit: bool = True
     accept_ebt: bool = False
-    accept_amex: bool = False
+    accept_amex: bool = True   # AMEX OptBlue is ON by default (KIT POS standard)
     # Business details
     refund_policy: str = "No refund policy"
     already_processing: bool = False
