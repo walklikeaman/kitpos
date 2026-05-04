@@ -241,16 +241,15 @@ plan = build_plan_summary(
 
 ### Step 4: Execute in PAX portal (manual or via Playwright)
 
+> **Authoritative procedure:** see [`PAXSTORE_PROVISIONING_RULES.md`](./PAXSTORE_PROVISIONING_RULES.md). Summary below — defer to the rules doc when in doubt.
+
 - Login → Terminal Management
-- Select Pady C Store merchant
-- Create POS terminal (L1400)
-- Create PIN pad terminal (A3700)
-- Push Firmware to both
-- Push Apps:
-  - POS: KIT Stock + KIT Merchant
-  - PIN pad: KIT Back Screen + BroadPOS TSYS Sierra
-- Fill TSYS form with API-derived parameters
-- Leave BroadPOS TSYS Sierra **PENDING**
+- Create merchant — **Name only** (`{DBA} {MID}`); leave every other field empty
+- Create terminal — type SN first; **let Model auto-detect** (do NOT pick it manually)
+- Push Firmware (latest `PayDroid_*` build)
+- Install BroadPOS TSYS Sierra **via Push Template** (Push App dialog → Push Template tab → tick template → OK). Do NOT search "tsys" or pick the app by hand.
+- Fill TSYS tab with API-derived parameters
+- Leave BroadPOS TSYS Sierra **PENDING** unless the user activates explicitly
 
 ## Error Handling
 
@@ -274,6 +273,7 @@ If merchant has no terminals in API:
 
 ## References
 
+- **PAX Store Provisioning Rules (authoritative):** `docs/PAXSTORE_PROVISIONING_RULES.md`
 - **KIT Dashboard Merchant Data Agent:** `agents/kit-dashboard-merchant-data/AGENT_CONTEXT.md`
 - **PAX Store Recorded Flow:** `docs/PAXSTORE_RECORDED_FLOW.md`
 - **Tests:** `tests/test_kit_dashboard_integration.py`

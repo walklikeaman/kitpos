@@ -128,8 +128,16 @@ Rules in this flow:
 - POS gets latest firmware first, then `KIT Stock` and `KIT Merchant`; `KIT POS` is expected to be automatic.
 - PIN pad gets latest firmware first, then `BroadPOS TSYS Sierra`.
 - `KIT Back Screen` is installed only for supported PIN pad models, currently `A3700`/`3700`; use `--pinpad-back-screen` or `--no-pinpad-back-screen` to override.
-- BroadPOS TSYS Sierra loads `Parameter File:retail.zip`, fills VAR numbers, and stays pending unless `--activate-payment-app` is explicitly passed.
+- BroadPOS TSYS Sierra is installed **via Push Template** (Push App dialog → Push Template tab → tick template → OK). Do not search the app catalog by hand. The chosen template loads its parameter file (e.g. `retail.zip`) automatically.
+- TSYS parameters are filled from VAR; the push stays Pending unless `--activate-payment-app` is explicitly passed.
 - If a merchant has multiple VAR rows, select the intended row with `--var-v-number` or `--var-terminal-number`; otherwise the first API row is used.
+
+**Strict provisioning rules:** see [`docs/PAXSTORE_PROVISIONING_RULES.md`](docs/PAXSTORE_PROVISIONING_RULES.md). Highlights:
+
+- Merchant creation: only `Name = "{DBA} {MID}"`; no address / phone / state / city / merchant type.
+- Terminal creation: type SN first; Model auto-detects — do not pick it manually.
+- App install: Push Template (not a manual search for BroadPOS TSYS Sierra).
+- Don't change the Model dropdown in the BroadPOS App Detail panel.
 
 The PAX Store runner reads Merchant Number and TSYS parameter values from KIT API
 or VAR PDF, then fills the recorded browser flow. See

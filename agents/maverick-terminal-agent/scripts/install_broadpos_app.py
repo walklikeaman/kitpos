@@ -1,6 +1,19 @@
 """
 Install BroadPOS TSYS Sierra app and fill TSYS parameters.
 Continues from existing PAX portal session.
+
+⚠️ LEGACY FLOW — DO NOT USE FOR NEW PROVISIONING.
+
+The `push_app()` function below searches the app catalog for "tsys" and
+manually selects "BroadPOS TSYS Sierra" + Parameter File "retail.zip". This is
+NO LONGER the canonical procedure.
+
+The current rule (see `docs/PAXSTORE_PROVISIONING_RULES.md`, §4) is:
+    Push Task → Push App dialog → "Push Template" tab → tick template → OK
+The template auto-installs BroadPOS TSYS Sierra with the right Parameter File.
+
+This module is kept only for the TSYS field mapping in `fill_tsys_parameters()`
+which IS still correct. Reuse that helper from new code; ignore `push_app()`.
 """
 from __future__ import annotations
 
