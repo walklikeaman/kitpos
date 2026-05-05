@@ -301,6 +301,67 @@ from:no-reply@kitdashboard.com subject:"verification" newer_than:5m
 
 ---
 
+## Коды штатов (_STATE_CODES) — важно
+
+Maverick API возвращает штат как целое число (`address.state`).
+Маппинг — строгий алфавитный порядок 50 штатов + DC, где **DC стоит на позиции 9**
+(alphabetically: Delaware=8, **District of Columbia=9**, Florida=10, …).
+
+Это ≠ наивный алфавитный порядок без DC — из-за DC все штаты от Florida и далее
+сдвинуты на +1 относительно простого алфавитного списка.
+
+Верификация (из реальных мерчантов):
+- state=11 + zip=30458 → **Georgia** ✓ (Statesboro Vape Shop, GA)
+- state=37 + zip=73703 → **Oklahoma** ✓ (Enid, OK)
+
+Полная таблица определена в `models.py` → `_STATE_CODES`.
+Не менять без проверки реальными мерчантами.
+
+---
+
+## Адрес: валидация штата по ZIP-коду
+
+`models.py` содержит функцию `validate_state_from_zip(zip_code, state_name)`.
+При несовпадении первых 3 цифр ZIP с ожидаемым штатом — выдаёт предупреждение в stderr.
+
+Это не блокирует работу — только предупреждает. Несовпадение может означать:
+- Ошибочный штат в API (`_STATE_CODES` неверен для этого мерчанта)
+- Мерчант зарегистрирован в одном штате, работает в другом (редко)
+- Ошибка в данных самого мерчанта
+
+При обнаружении несоответствия — проверить реальный адрес через дашборд.
+
+---
+
+## Email мерчанта: двухуровневый поиск
+
+### Уровень 1: Merchant API
+
+Единственное поле с email в Merchant API:
+```
+merchant.dbas[0].customerServiceContact.email
+```
+Это "Support Email" в дашборде. Часто не заполнен.
+
+> ⚠️ На principals в Merchant API email **нет**. Не искать там.
+
+### Уровень 2: Boarding Application (fallback)
+
+Если Merchant API не вернул email — ищем в заявке на онбординг.
+Запрос: `GET /boarding-application?filter[company.name][like]={merchant_name}`
+
+Проверяются три поля **по приоритету**:
+
+| Приоритет | Поле | Примечание |
+|---|---|---|
+| 1 | `customerServiceContact.email` | "Support Email" — предпочтительный |
+| 2 | `corporateContact.email` | Корпоративный контакт |
+| 3 | `principals[N].email` | Личный email принципала (последний вариант) |
+
+Берётся первое непустое значение. Реализовано в `kit_api.py` → `_email_from_boarding()`.
+
+---
+
 ## Обучение на новых данных: правила
 
 Каждый раз когда агент обрабатывает новый VAR-лист (PDF или текст),
@@ -460,3 +521,8 @@ print(RunLogger().summary())
 | 2026-05-02 | Правила: title дефолт CEO, не Owner; no middle name |
 | 2026-05-02 | RunLogger: система логирования запусков (runs/runs.jsonl) |
 | 2026-05-02 | Первый успешный полный запуск: El Camino Mart Inc → app_id=756692 |
+| 2026-05-05 | Исправлен `_STATE_CODES`: DC на позиции 9 (не 51); сдвинуты FL=10, GA=11 и далее |
+| 2026-05-05 | Добавлена валидация адреса: ZIP-prefix → ожидаемый штат (`validate_state_from_zip`) |
+| 2026-05-05 | Email fallback: если нет в Merchant API → ищем в boarding-application (3 поля) |
+| 2026-05-05 | `_parse()`: в адрес добавлен штат (раньше отсутствовал) |
+| 2026-05-05 | Skill `kit-merchant-lookup` создан для Claude Code |
