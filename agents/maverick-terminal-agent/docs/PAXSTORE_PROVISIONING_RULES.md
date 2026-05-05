@@ -3,6 +3,51 @@
 > **Authoritative rule set for adding merchants/terminals in PAX Store.**
 > Do not improvise. Do not enrich data. Do not add fields the user did not ask for.
 
+---
+
+## 0. VAR Data Source — Priority Order
+
+Before starting any provisioning, VAR (TSYS parameters) must be obtained in this order:
+
+### Priority 1 — KIT Dashboard API ✅ PRIMARY
+
+```bash
+cd agents/kit-dashboard-merchant-data
+merchant api-var-by-mid 201100305938 --json
+```
+
+- No browser, no PDF, no email. Bearer token only (`KIT_API_KEY`).
+- Returns JSON with all TSYS fields: BIN, chain, agent_bank, MID, store_number, terminal_number, city, state, zip, mcc, v_number.
+- **Always take the first VAR row** (index 0) unless the user explicitly specifies a different one via `--var-v-number` or `--var-terminal-number`.
+- Full technical reference: [`docs/var-api-integration-guide.md`](var-api-integration-guide.md)
+
+### Priority 2 — VAR PDF (manual)
+
+Use only when the API is unavailable or returns no data for the merchant.
+
+```bash
+python3 scripts/paxstore_provision_from_pdf.py --pdf "/path/to/var.pdf" ...
+```
+
+The user may also send the PDF directly in chat — accept it and parse.
+
+### Priority 3 — Email Inbox ⚠️ Last Resort Only
+
+Use only when neither API nor PDF is available. Do **not** check email by default.
+
+```bash
+# Only if explicitly asked or API+PDF both unavailable
+python3 scripts/paxstore_provision_from_pdf.py --var-source email ...
+```
+
+### ❌ What NOT to do
+
+- Do not check email as a first step — API is always tried first.
+- Do not search for a PDF manually if `KIT_API_KEY` is configured.
+- Do not ask the user for a PDF if the API returns data.
+
+---
+
 ## Golden Rule
 
 **Do nothing beyond what is explicitly required.** No "helpful" extras (address, phone, country/region, state, city, ZIP, merchant type, model picks, etc.) — every additional field is friction and a chance for error. The user will tell you if more is needed.
