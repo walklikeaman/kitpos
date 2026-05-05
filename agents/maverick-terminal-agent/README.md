@@ -86,6 +86,18 @@ pip install -e '.[browser]'
 python -m playwright install chromium
 ```
 
+### Browser mode
+
+**Default: headless** (no visible Chrome window). Use `--headed` only for debugging:
+
+```bash
+# Headless (default) — no browser window opens
+python scripts/paxstore_provision_from_pdf.py --pdf "..." --serial-number 2290653126 --steps merchant,terminal --submit
+
+# Headed — opens visible Chrome, use for debugging only
+python scripts/paxstore_provision_from_pdf.py --pdf "..." --serial-number 2290653126 --steps merchant,terminal --submit --headed
+```
+
 Dry-run the recorded browser flow. This fills forms and writes screenshots under
 `tmp/screenshots/`, but does not click final submit buttons:
 
@@ -134,10 +146,12 @@ Rules in this flow:
 
 **Strict provisioning rules:** see [`docs/PAXSTORE_PROVISIONING_RULES.md`](docs/PAXSTORE_PROVISIONING_RULES.md). Highlights:
 
+- **Browser: headless by default.** Do not open Chrome manually. Use `--headed` only for debugging.
 - Merchant creation: only `Name = "{DBA} {MID}"`; no address / phone / state / city / merchant type.
 - Terminal creation: type SN first; Model auto-detects — do not pick it manually.
 - App install: Push Template (not a manual search for BroadPOS TSYS Sierra).
 - Don't change the Model dropdown in the BroadPOS App Detail panel.
+- After PAX Store provisioning: upload merchant logo to KIT Dashboard (`merchant upload-logo logo.png --mid <MID>`).
 
 The PAX Store runner reads Merchant Number and TSYS parameter values from KIT API
 or VAR PDF, then fills the recorded browser flow. See

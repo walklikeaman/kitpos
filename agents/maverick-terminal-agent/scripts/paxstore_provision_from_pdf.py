@@ -1089,7 +1089,11 @@ async def main() -> None:
         help="Activate BroadPOS TSYS Sierra after filling TSYS parameters. Default keeps it pending for review.",
     )
     parser.add_argument("--plan-only", action="store_true", help="Resolve/read VAR and print the workflow plan without opening PAX Store.")
-    parser.add_argument("--headed", action="store_true")
+    parser.add_argument(
+        "--headed",
+        action="store_true",
+        help="Run browser in headed (visible) mode. Default is headless. Use only for debugging.",
+    )
     args = parser.parse_args()
 
     settings = Settings.from_env()

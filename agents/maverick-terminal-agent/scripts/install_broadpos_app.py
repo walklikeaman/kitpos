@@ -304,7 +304,7 @@ async def main() -> None:
     password = getpass("PAX password: ")
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)  # headed to see what happens
+        browser = await p.chromium.launch(headless=True)  # headless by default; pass headless=False for debugging
         context = await browser.new_context(viewport={"width": 1440, "height": 1000})
         page = await context.new_page()
         page.set_default_timeout(20000)

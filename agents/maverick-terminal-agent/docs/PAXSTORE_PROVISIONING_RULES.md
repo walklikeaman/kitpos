@@ -169,13 +169,50 @@ For an A35 / A3700 sent in standalone (no separate POS):
 3. Push firmware (rule §3).
 4. Push template → BroadPOS TSYS Sierra (rule §4).
 5. Fill TSYS (rule §5).
-6. Stop. Leave activation for the user.
+6. Upload merchant logo to KIT Dashboard (rule §8).
+7. Stop. Leave activation for the user.
 
 **KIT Back Screen:** install only on supported PIN pad models (A3700 ✓, A35 ✗) and only when the user requests it. The template flow is preferred — if the chosen template covers Back Screen, no separate step needed.
 
 ---
 
-## 8. What this overrides
+## 8. Upload Merchant Logo to KIT Dashboard
+
+After PAX Store provisioning is complete, upload the merchant logo on KIT Dashboard as the final step.
+
+### Command
+
+```bash
+cd agents/kit-dashboard-merchant-data
+
+# By MID (preferred)
+merchant upload-logo logo.png --mid 201100306415
+
+# By merchant name
+merchant upload-logo logo.png --name "Snack Zone"
+
+# By internal DBA ID
+merchant upload-logo logo.png --internal-id 303608
+```
+
+### How it works
+
+- `dbaId` is resolved from `merchant.dbas[0].id` via Merchant API
+- Logo is uploaded via `POST https://kitdashboard.com/merchant/profile/upload-dba-logo?id=<dbaId>` (multipart/form-data, field `file`)
+- Session is reused from `tmp/kit-merchant-state.json` (same session as VarDownloader); auto-login if expired
+
+### Remove logo
+
+```bash
+merchant remove-logo --mid 201100306415
+merchant remove-logo --name "Snack Zone"
+```
+
+⚠️ **Logo upload is NOT available via REST API** — only via the UI session controller (session cookie required). Do not attempt it via Bearer token.
+
+---
+
+## 9. What this overrides
 
 These rules supersede earlier guidance in:
 
