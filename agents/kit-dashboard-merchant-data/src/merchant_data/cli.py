@@ -14,6 +14,7 @@ from merchant_data.services.kit_merchant_lookup import MerchantLookupService
 from merchant_data.services.kit_api import MerchantAPIService, UnknownChainError
 from merchant_data.services.kit_var_downloader import VarDownloader
 from merchant_data.services.kit_onboarding import MerchantOnboardingService, OnboardingAPIError
+from merchant_data.services.kit_branding import MerchantBrandingService
 
 app = typer.Typer(no_args_is_help=True, help="KIT Dashboard – merchant lookup by ID or name.")
 
@@ -387,6 +388,86 @@ def board_create(
         typer.echo(json.dumps(result.to_dict(), indent=2, ensure_ascii=False))
     else:
         typer.echo(result.summary())
+
+
+# ─────────────────────────── Branding / Logo commands ───────────────────────
+
+def _build_branding_service(api_key: str | None, email: str | None, password: str | None, verification_code: str | None) -> MerchantBrandingService:
+    key = api_key or os.environ.get("KIT_API_KEY", "")
+    if not key:
+        typer.echo("ERROR: Provide --api-key or set KIT_API_KEY in .env", err=True)
+        raise typer.Exit(1)
+    creds = _build_credentials(email, password, verification_code)
+    return MerchantBrandingService(key, creds)
+
+
+@app.command("upload-logo")
+def upload_logo(
+    image: Path = typer.Argument(..., help="Path to logo image (JPEG, PNG, or GIF)"),
+    name: Optional[str] = typer.Option(None, "--name", help="Merchant name (partial match)"),
+    mid: Optional[str] = typer.Option(None, "--mid", help="12-digit KIT Merchant ID"),
+    internal_id: Optional[int] = typer.Option(None, "--internal-id", help="Dashboard internal id (from profile URL ?id=XXXXX)"),
+    api_key: Optional[str] = typer.Option(None, envvar="KIT_API_KEY"),
+    email: Optional[str] = typer.Option(None, envvar="KIT_EMAIL"),
+    password: Optional[str] = typer.Option(None, envvar="KIT_PASSWORD"),
+    verification_code: Optional[str] = typer.Option(None, "--verification-code"),
+) -> None:
+    """[Session] Upload a logo image for an active merchant.
+
+    Identify the merchant with one of: --name, --mid, or --internal-id.
+
+    Examples:
+      merchant upload-logo logo.png --name "Snack Zone"
+      merchant upload-logo logo.png --mid 201100306415
+      merchant upload-logo logo.png --internal-id 303608
+    """
+    if not any([name, mid, internal_id]):
+        typer.echo("ERROR: Provide one of: --name, --mid, or --internal-id", err=True)
+        raise typer.Exit(1)
+
+    service = _build_branding_service(api_key, email, password, verification_code)
+    try:
+        if internal_id is not None:
+            result = service.upload_logo_by_internal_id(internal_id, image)
+        elif mid:
+            result = service.upload_logo_by_mid(mid, image)
+        else:
+            result = service.upload_logo_by_name(name, image)
+    except Exception as exc:
+        typer.echo(f"ERROR: {exc}", err=True)
+        raise typer.Exit(1)
+    typer.echo(result.summary())
+
+
+@app.command("remove-logo")
+def remove_logo(
+    name: Optional[str] = typer.Option(None, "--name", help="Merchant name (partial match)"),
+    internal_id: Optional[int] = typer.Option(None, "--internal-id", help="Dashboard internal id"),
+    api_key: Optional[str] = typer.Option(None, envvar="KIT_API_KEY"),
+    email: Optional[str] = typer.Option(None, envvar="KIT_EMAIL"),
+    password: Optional[str] = typer.Option(None, envvar="KIT_PASSWORD"),
+    verification_code: Optional[str] = typer.Option(None, "--verification-code"),
+) -> None:
+    """[Session] Remove the logo for an active merchant.
+
+    Examples:
+      merchant remove-logo --name "Snack Zone"
+      merchant remove-logo --internal-id 303608
+    """
+    if not any([name, internal_id]):
+        typer.echo("ERROR: Provide one of: --name or --internal-id", err=True)
+        raise typer.Exit(1)
+
+    service = _build_branding_service(api_key, email, password, verification_code)
+    try:
+        if internal_id is not None:
+            result = service.remove_logo_by_internal_id(internal_id)
+        else:
+            result = service.remove_logo_by_name(name)
+    except Exception as exc:
+        typer.echo(f"ERROR: {exc}", err=True)
+        raise typer.Exit(1)
+    typer.echo(result.summary())
 
 
 # ──────────────────────── Browser commands (kept for VAR download) ────────────
