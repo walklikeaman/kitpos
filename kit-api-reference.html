@@ -1,0 +1,1304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KIT POS API Reference</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --sidebar-bg: #161b22;
+    --card: #1c2230;
+    --border: #2d3748;
+    --text: #e2e8f0;
+    --muted: #8892a4;
+    --accent: #3b82f6;
+    --accent-glow: rgba(59,130,246,0.15);
+    --green: #10b981;
+    --yellow: #f59e0b;
+    --red: #ef4444;
+    --purple: #8b5cf6;
+    --orange: #f97316;
+    --teal: #14b8a6;
+    --code-bg: #0d1117;
+    --sidebar-w: 280px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); display: flex; min-height: 100vh; font-size: 14px; line-height: 1.6; }
+
+  /* SIDEBAR */
+  .sidebar {
+    width: var(--sidebar-w); min-width: var(--sidebar-w); background: var(--sidebar-bg);
+    border-right: 1px solid var(--border); position: fixed; top: 0; left: 0; height: 100vh;
+    overflow-y: auto; z-index: 100; display: flex; flex-direction: column;
+  }
+  .sidebar-logo { padding: 20px 20px 16px; border-bottom: 1px solid var(--border); }
+  .sidebar-logo .logo-badge { display: inline-flex; align-items: center; gap: 8px; }
+  .logo-icon { width: 32px; height: 32px; background: var(--accent); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; color: #fff; }
+  .logo-text { font-weight: 700; font-size: 15px; color: var(--text); }
+  .logo-sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
+  .sidebar-nav { padding: 12px 0; flex: 1; }
+  .nav-section { margin-bottom: 4px; }
+  .nav-label { padding: 6px 20px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+  .nav-item { display: flex; align-items: center; gap: 8px; padding: 7px 20px; cursor: pointer; color: var(--muted); font-size: 13px; transition: all .15s; border-left: 3px solid transparent; text-decoration: none; }
+  .nav-item:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+  .nav-item.active { color: var(--accent); border-left-color: var(--accent); background: var(--accent-glow); }
+  .nav-sub { padding-left: 28px; }
+  .nav-sub .nav-item { padding: 5px 20px 5px 12px; font-size: 12px; }
+  .method-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .dot-get { background: var(--green); }
+  .dot-post { background: var(--accent); }
+  .dot-put { background: var(--yellow); }
+  .dot-delete { background: var(--red); }
+
+  /* MAIN */
+  .main { margin-left: var(--sidebar-w); flex: 1; max-width: 960px; padding: 48px 56px; }
+  @media (max-width: 900px) { .main { padding: 24px 20px; } }
+
+  /* SECTIONS */
+  .section { margin-bottom: 72px; scroll-margin-top: 24px; }
+  h1.page-title { font-size: 32px; font-weight: 800; color: #fff; margin-bottom: 8px; letter-spacing: -0.5px; }
+  .page-subtitle { color: var(--muted); font-size: 15px; margin-bottom: 40px; max-width: 600px; line-height: 1.7; }
+  h2.section-title { font-size: 22px; font-weight: 700; color: #fff; margin-bottom: 6px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+  h3.group-title { font-size: 17px; font-weight: 600; color: var(--text); margin: 28px 0 12px; }
+  .section-desc { color: var(--muted); font-size: 13px; margin-bottom: 20px; line-height: 1.7; }
+
+  /* ENDPOINT CARDS */
+  .endpoint-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 12px; overflow: hidden; transition: border-color .2s; }
+  .endpoint-card:hover { border-color: #3d4a5c; }
+  .endpoint-header { display: flex; align-items: center; gap: 12px; padding: 14px 18px; cursor: pointer; user-select: none; }
+  .method-badge { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 5px; letter-spacing: 0.5px; min-width: 58px; text-align: center; }
+  .badge-get { background: rgba(16,185,129,0.15); color: var(--green); border: 1px solid rgba(16,185,129,0.3); }
+  .badge-post { background: rgba(59,130,246,0.15); color: var(--accent); border: 1px solid rgba(59,130,246,0.3); }
+  .badge-put { background: rgba(245,158,11,0.15); color: var(--yellow); border: 1px solid rgba(245,158,11,0.3); }
+  .badge-delete { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
+  .badge-patch { background: rgba(139,92,246,0.15); color: var(--purple); border: 1px solid rgba(139,92,246,0.3); }
+  .endpoint-path { font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace; font-size: 13px; color: var(--text); flex: 1; }
+  .endpoint-path .param { color: var(--orange); }
+  .endpoint-desc-inline { font-size: 12px; color: var(--muted); margin-left: auto; }
+  .endpoint-body { padding: 0 18px 18px; border-top: 1px solid var(--border); display: none; }
+  .endpoint-body.open { display: block; }
+  .endpoint-body-desc { color: var(--muted); font-size: 13px; margin: 14px 0 16px; line-height: 1.7; }
+
+  /* CODE BLOCKS */
+  .code-block { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin: 12px 0; }
+  .code-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 14px; border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.02); }
+  .code-lang { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+  .copy-btn { font-size: 11px; color: var(--muted); cursor: pointer; background: none; border: 1px solid var(--border); padding: 2px 8px; border-radius: 4px; transition: all .15s; }
+  .copy-btn:hover { color: var(--text); border-color: #4a5568; }
+  pre.code { padding: 16px; overflow-x: auto; font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 12px; line-height: 1.7; color: #a8b8d0; }
+  pre.code .kw { color: #79c0ff; }
+  pre.code .str { color: #a5d6ff; }
+  pre.code .num { color: #e6beff; }
+  pre.code .key { color: #7ee787; }
+  pre.code .url-part { color: var(--orange); }
+  pre.code .comment { color: var(--muted); font-style: italic; }
+
+  /* PARAMS TABLE */
+  .params-table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 12px; }
+  .params-table th { text-align: left; padding: 8px 12px; color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border); }
+  .params-table td { padding: 9px 12px; border-bottom: 1px solid rgba(45,55,72,0.5); vertical-align: top; }
+  .params-table tr:last-child td { border-bottom: none; }
+  .param-name { font-family: monospace; color: var(--orange); }
+  .param-type { color: var(--purple); font-size: 11px; }
+  .tag { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 3px; font-weight: 600; margin-left: 4px; }
+  .tag-required { background: rgba(239,68,68,0.15); color: var(--red); }
+  .tag-readonly { background: rgba(139,92,246,0.15); color: var(--purple); }
+  .tag-filterable { background: rgba(16,185,129,0.15); color: var(--green); }
+  .tag-optional { background: rgba(100,116,139,0.15); color: var(--muted); }
+
+  /* INFO BOXES */
+  .info-box { border-radius: 8px; padding: 12px 16px; margin: 14px 0; font-size: 13px; line-height: 1.6; display: flex; gap: 10px; }
+  .info-box .icon { flex-shrink: 0; margin-top: 1px; }
+  .info-warning { background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.25); color: #fbbf24; }
+  .info-tip { background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.2); color: #93c5fd; }
+  .info-success { background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.2); color: #6ee7b7; }
+
+  /* OVERVIEW CARDS */
+  .overview-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin: 24px 0; }
+  .overview-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .overview-card .oc-icon { font-size: 20px; margin-bottom: 8px; }
+  .overview-card .oc-title { font-weight: 600; font-size: 13px; color: var(--text); margin-bottom: 4px; }
+  .overview-card .oc-count { font-size: 24px; font-weight: 800; color: var(--accent); }
+  .overview-card .oc-label { font-size: 11px; color: var(--muted); }
+
+  /* BASE URL BOX */
+  .base-url-box { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; margin-bottom: 24px; }
+  .base-url-box .bub-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; margin-bottom: 8px; }
+  .base-url-row { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+  .env-badge { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+  .env-prod { background: rgba(16,185,129,0.15); color: var(--green); }
+  .env-sandbox { background: rgba(245,158,11,0.15); color: var(--yellow); }
+  .base-url-text { font-family: monospace; font-size: 13px; color: var(--text); }
+
+  /* FILTER TABLE */
+  .filter-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; margin: 12px 0; }
+  .filter-item { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; }
+  .filter-op { font-family: monospace; color: var(--orange); font-size: 13px; font-weight: 600; }
+  .filter-desc { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  /* WEBHOOK EVENTS */
+  .webhook-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 16px 0; }
+  .webhook-event { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+  .webhook-module { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--accent); margin-bottom: 6px; }
+  .webhook-action { font-size: 12px; color: var(--muted); font-family: monospace; padding: 2px 0; }
+
+  /* SCROLL TO TOP */
+  .scroll-top { position: fixed; bottom: 24px; right: 24px; background: var(--accent); color: #fff; border: none; border-radius: 50%; width: 40px; height: 40px; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(59,130,246,0.4); z-index: 200; }
+
+  /* SEARCH */
+  .search-box { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .search-input { width: 100%; background: var(--card); border: 1px solid var(--border); border-radius: 7px; padding: 7px 12px; color: var(--text); font-size: 13px; outline: none; }
+  .search-input:focus { border-color: var(--accent); }
+  .search-input::placeholder { color: var(--muted); }
+
+  /* DIVIDER */
+  .divider { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
+
+  /* BREADCRUMB */
+  .breadcrumb { font-size: 12px; color: var(--muted); margin-bottom: 20px; }
+  .breadcrumb span { color: var(--text); }
+
+  /* TOGGLE chevron */
+  .chevron { margin-left: auto; color: var(--muted); font-size: 12px; transition: transform .2s; }
+  .chevron.open { transform: rotate(90deg); }
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<nav class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-badge">
+      <div class="logo-icon">KIT</div>
+      <div>
+        <div class="logo-text">KIT POS</div>
+        <div class="logo-sub">API Reference</div>
+      </div>
+    </div>
+  </div>
+  <div class="search-box">
+    <input class="search-input" type="text" placeholder="Search endpoints..." id="searchInput" oninput="filterNav(this.value)">
+  </div>
+  <div class="sidebar-nav" id="sidebarNav">
+    <div class="nav-section">
+      <div class="nav-label">Getting Started</div>
+      <a class="nav-item active" href="#overview" onclick="setActive(this)">📋 Overview</a>
+      <a class="nav-item" href="#auth" onclick="setActive(this)">🔑 Authentication</a>
+      <a class="nav-item" href="#errors" onclick="setActive(this)">⚠️ Errors & Codes</a>
+      <a class="nav-item" href="#filters" onclick="setActive(this)">🔍 Filters</a>
+      <a class="nav-item" href="#pagination" onclick="setActive(this)">📄 Pagination</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Payment Gateway</div>
+      <a class="nav-item" href="#pg-overview" onclick="setActive(this)">💳 Overview</a>
+      <div class="nav-sub">
+        <a class="nav-item" href="#pg-list" onclick="setActive(this)"><span class="method-dot dot-get"></span> List Payments</a>
+        <a class="nav-item" href="#pg-view" onclick="setActive(this)"><span class="method-dot dot-get"></span> View Payment</a>
+        <a class="nav-item" href="#pg-sale" onclick="setActive(this)"><span class="method-dot dot-post"></span> Sale</a>
+        <a class="nav-item" href="#pg-auth" onclick="setActive(this)"><span class="method-dot dot-post"></span> Auth (Pre-Auth)</a>
+        <a class="nav-item" href="#pg-capture" onclick="setActive(this)"><span class="method-dot dot-post"></span> Capture</a>
+        <a class="nav-item" href="#pg-refund" onclick="setActive(this)"><span class="method-dot dot-post"></span> Refund</a>
+        <a class="nav-item" href="#pg-cardauth" onclick="setActive(this)"><span class="method-dot dot-post"></span> Card Authentication</a>
+        <a class="nav-item" href="#pg-token" onclick="setActive(this)"><span class="method-dot dot-post"></span> Generate Token</a>
+        <a class="nav-item" href="#pg-hosted-form" onclick="setActive(this)">🖼️ Hosted Form</a>
+        <a class="nav-item" href="#pg-hosted-fields" onclick="setActive(this)">🖼️ Hosted Fields</a>
+      </div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Dashboard API</div>
+      <a class="nav-item" href="#db-boarding" onclick="setActive(this)">📝 Boarding Applications</a>
+      <a class="nav-item" href="#db-dba" onclick="setActive(this)">🏢 DBA</a>
+      <a class="nav-item" href="#db-reporting" onclick="setActive(this)">📊 Reporting</a>
+      <a class="nav-item" href="#db-cv" onclick="setActive(this)">👤 Customer Vault</a>
+      <a class="nav-item" href="#db-ach" onclick="setActive(this)">🏦 ACH</a>
+      <a class="nav-item" href="#db-attachments" onclick="setActive(this)">📎 Attachments</a>
+      <a class="nav-item" href="#db-tickets" onclick="setActive(this)">🎫 Tickets</a>
+      <a class="nav-item" href="#db-residuals" onclick="setActive(this)">💰 Residuals</a>
+      <a class="nav-item" href="#db-address" onclick="setActive(this)">🗺️ Address Check</a>
+      <a class="nav-item" href="#db-bin" onclick="setActive(this)">🔢 BIN Lookup</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Recurring</div>
+      <a class="nav-item" href="#recurring" onclick="setActive(this)">🔄 Recurring Payments</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Security</div>
+      <a class="nav-item" href="#threeds" onclick="setActive(this)">🛡️ 3D Secure</a>
+      <a class="nav-item" href="#webhooks" onclick="setActive(this)">🔔 Webhooks</a>
+    </div>
+  </div>
+</nav>
+
+<!-- MAIN CONTENT -->
+<main class="main">
+
+  <!-- OVERVIEW -->
+  <section class="section" id="overview">
+    <div class="breadcrumb">Getting Started</div>
+    <h1 class="page-title">KIT POS API Reference</h1>
+    <p class="page-subtitle">A REST API for payment processing, merchant management, customer vaults, and reporting. All requests go over HTTPS and return JSON. Authentication uses Bearer tokens.</p>
+
+    <div class="overview-grid">
+      <div class="overview-card">
+        <div class="oc-icon">💳</div>
+        <div class="oc-title">Payment Gateway</div>
+        <div class="oc-count">8</div>
+        <div class="oc-label">endpoints</div>
+      </div>
+      <div class="overview-card">
+        <div class="oc-icon">📝</div>
+        <div class="oc-title">Boarding</div>
+        <div class="oc-count">20+</div>
+        <div class="oc-label">endpoints</div>
+      </div>
+      <div class="overview-card">
+        <div class="oc-icon">👤</div>
+        <div class="oc-title">Customer Vault</div>
+        <div class="oc-count">30+</div>
+        <div class="oc-label">endpoints</div>
+      </div>
+      <div class="overview-card">
+        <div class="oc-icon">🔔</div>
+        <div class="oc-title">Webhooks</div>
+        <div class="oc-count">18</div>
+        <div class="oc-label">event types</div>
+      </div>
+    </div>
+
+    <div class="base-url-box">
+      <div class="bub-label">Base URLs</div>
+      <div class="base-url-row"><span class="env-badge env-prod">Production</span><span class="base-url-text">https://gateway.kitdashboard.com/</span><span style="color:var(--muted);font-size:12px">— Payment Gateway</span></div>
+      <div class="base-url-row"><span class="env-badge env-prod">Production</span><span class="base-url-text">https://kitdashboard.com/api/</span><span style="color:var(--muted);font-size:12px">— Dashboard API</span></div>
+      <div class="base-url-row"><span class="env-badge env-sandbox">Sandbox</span><span class="base-url-text">https://sandbox-gateway.kitdashboard.com/</span><span style="color:var(--muted);font-size:12px">— Gateway (testing)</span></div>
+      <div class="base-url-row"><span class="env-badge env-sandbox">Sandbox</span><span class="base-url-text">https://sandbox.kitdashboard.com/</span><span style="color:var(--muted);font-size:12px">— Dashboard (testing)</span></div>
+    </div>
+    <div class="info-box info-warning">
+      <div class="icon">⚠️</div>
+      <div>Your Access Token is <strong>different</strong> for sandbox and production. Don't mix them up — a production token won't work in sandbox and vice versa.</div>
+    </div>
+  </section>
+
+  <!-- AUTH -->
+  <section class="section" id="auth">
+    <div class="breadcrumb">Getting Started</div>
+    <h2 class="section-title">🔑 Authentication</h2>
+    <p class="section-desc">Every request needs a Bearer token in the Authorization header. Get your token from the KIT Dashboard under Developer settings. Never share it — reset it any time from the same page.</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">HTTP Header</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre class="code">Authorization: Bearer &lt;your-access-token&gt;</pre>
+    </div>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">cURL Example</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre class="code">curl -H "Authorization: Bearer &lt;accessToken&gt;" \
+     -H "Content-Type: application/json" \
+     -X GET https://gateway.kitdashboard.com/payments</pre>
+    </div>
+    <div class="info-box info-warning">
+      <div class="icon">🔒</div>
+      <div>All API calls must use <strong>HTTPS</strong>. Plain HTTP will fail. Requests without a valid token will return <code style="color:var(--red)">401 Unauthorized</code>.</div>
+    </div>
+  </section>
+
+  <!-- ERRORS -->
+  <section class="section" id="errors">
+    <div class="breadcrumb">Getting Started</div>
+    <h2 class="section-title">⚠️ Errors & Response Codes</h2>
+    <p class="section-desc">Standard HTTP status codes. The response body always includes a machine-readable error structure.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin:16px 0;">
+      <div class="overview-card"><div style="color:var(--green);font-size:20px;margin-bottom:6px;">✅</div><div class="oc-title">2xx — Success</div><div class="oc-label">Request worked as expected</div></div>
+      <div class="overview-card"><div style="color:var(--yellow);font-size:20px;margin-bottom:6px;">⚠️</div><div class="oc-title">4xx — Client Error</div><div class="oc-label">Bad input, missing params, auth issues</div></div>
+      <div class="overview-card"><div style="color:var(--red);font-size:20px;margin-bottom:6px;">🔴</div><div class="oc-title">5xx — Server Error</div><div class="oc-label">Something on our end failed (rare)</div></div>
+    </div>
+    <h3 class="group-title">Error Response Shape</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">JSON</span></div>
+      <pre class="code">{
+  <span class="key">"name"</span>:    <span class="str">"Unprocessable entity"</span>,
+  <span class="key">"message"</span>: <span class="str">"Amount cannot be blank."</span>,
+  <span class="key">"code"</span>:    <span class="num">422</span>,
+  <span class="key">"status"</span>:  <span class="num">422</span>
+}</pre>
+    </div>
+  </section>
+
+  <!-- FILTERS -->
+  <section class="section" id="filters">
+    <div class="breadcrumb">Getting Started</div>
+    <h2 class="section-title">🔍 Filters</h2>
+    <p class="section-desc">Any field marked <code>Filterable</code> can be queried using URL parameters in the format <code>filter[field][operator]=value</code>. Combine operators with <code>and</code> / <code>or</code>.</p>
+    <div class="filter-grid">
+      <div class="filter-item"><div class="filter-op">eq</div><div class="filter-desc">Equals (=)</div></div>
+      <div class="filter-item"><div class="filter-op">neq</div><div class="filter-desc">Not equals (!=)</div></div>
+      <div class="filter-item"><div class="filter-op">lt</div><div class="filter-desc">Less than (&lt;)</div></div>
+      <div class="filter-item"><div class="filter-op">gt</div><div class="filter-desc">Greater than (&gt;)</div></div>
+      <div class="filter-item"><div class="filter-op">lte</div><div class="filter-desc">Less than or equal</div></div>
+      <div class="filter-item"><div class="filter-op">gte</div><div class="filter-desc">Greater than or equal</div></div>
+      <div class="filter-item"><div class="filter-op">like</div><div class="filter-desc">Contains (LIKE)</div></div>
+      <div class="filter-item"><div class="filter-op">in</div><div class="filter-desc">In a list</div></div>
+      <div class="filter-item"><div class="filter-op">nin</div><div class="filter-desc">Not in a list</div></div>
+      <div class="filter-item"><div class="filter-op">or</div><div class="filter-desc">OR condition</div></div>
+      <div class="filter-item"><div class="filter-op">and</div><div class="filter-desc">AND condition</div></div>
+      <div class="filter-item"><div class="filter-op">not</div><div class="filter-desc">Exclude values</div></div>
+    </div>
+    <h3 class="group-title">Examples</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">Created after date</span></div>
+      <pre class="code">GET /payments?filter[createdOn][gte]=2024-01-01 00:00:00</pre>
+    </div>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">Date range</span></div>
+      <pre class="code">GET /payments?filter[and][0][createdOn][gte]=2024-01-01 00:00:00
+              &filter[and][0][createdOn][lte]=2024-01-31 23:59:59</pre>
+    </div>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">Email contains</span></div>
+      <pre class="code">GET /customers?filter[customer.email][like]=example.com</pre>
+    </div>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">Multiple IDs</span></div>
+      <pre class="code">GET /payments?filter[id][in][]=1&filter[id][in][]=2</pre>
+    </div>
+    <div class="info-box info-tip">
+      <div class="icon">💡</div>
+      <div>Use <code>NULL</code> as a value to filter for empty/missing fields. Use <code>filter[not][field]=NULL</code> for non-empty.</div>
+    </div>
+  </section>
+
+  <!-- PAGINATION -->
+  <section class="section" id="pagination">
+    <div class="breadcrumb">Getting Started</div>
+    <h2 class="section-title">📄 Pagination</h2>
+    <p class="section-desc">All list endpoints paginate automatically. Control it with <code>page</code> and <code>per-page</code> query params.</p>
+    <table class="params-table">
+      <tr><th>Param</th><th>Default</th><th>Range</th><th>Description</th></tr>
+      <tr><td class="param-name">page</td><td>1</td><td>1+</td><td>Which page to return</td></tr>
+      <tr><td class="param-name">per-page</td><td>30</td><td>1–50</td><td>Results per page</td></tr>
+    </table>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">Request</span></div>
+      <pre class="code">GET /payments?page=2&per-page=10</pre>
+    </div>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">Response shape</span></div>
+      <pre class="code">{
+  <span class="key">"items"</span>: [ <span class="comment">/* your results */</span> ],
+  <span class="key">"_links"</span>: {
+    <span class="key">"self"</span>: { <span class="key">"href"</span>: <span class="str">"...?page=2&per-page=10"</span> },
+    <span class="key">"next"</span>: { <span class="key">"href"</span>: <span class="str">"...?page=3&per-page=10"</span> },
+    <span class="key">"last"</span>: { <span class="key">"href"</span>: <span class="str">"...?page=5&per-page=10"</span> }
+  },
+  <span class="key">"_meta"</span>: {
+    <span class="key">"totalCount"</span>:  <span class="num">50</span>,
+    <span class="key">"pageCount"</span>:   <span class="num">5</span>,
+    <span class="key">"currentPage"</span>: <span class="num">2</span>,
+    <span class="key">"perPage"</span>:     <span class="num">10</span>
+  }
+}</pre>
+    </div>
+  </section>
+
+  <hr class="divider">
+
+  <!-- PAYMENT GATEWAY -->
+  <section class="section" id="pg-overview">
+    <div class="breadcrumb">Payment Gateway</div>
+    <h2 class="section-title">💳 Payment Gateway</h2>
+    <p class="section-desc">The Gateway API handles all card-present and card-not-present transactions — sales, pre-auths, captures, refunds, and tokenization. Supports Level 1, 2, and 3 processing (L2/L3 unlock lower interchange rates). Sandbox available for testing without real money.</p>
+    <div class="base-url-box">
+      <div class="bub-label">Base URLs</div>
+      <div class="base-url-row"><span class="env-badge env-prod">Production</span><span class="base-url-text">https://gateway.kitdashboard.com</span></div>
+      <div class="base-url-row"><span class="env-badge env-sandbox">Sandbox</span><span class="base-url-text">https://sandbox-gateway.kitdashboard.com</span></div>
+    </div>
+  </section>
+
+  <section class="section" id="pg-list">
+    <h3 class="group-title">List Payments</h3>
+    <p class="section-desc">Returns a paginated list of all payment transactions. Supports full filter syntax on any filterable field.</p>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-get">GET</span>
+        <span class="endpoint-path">/payments</span>
+        <span class="endpoint-desc-inline">All transactions</span>
+      </div>
+    </div>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre class="code">curl -H "Authorization: Bearer &lt;accessToken&gt;" \
+     https://gateway.kitdashboard.com/payments</pre>
+    </div>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">With filters</span></div>
+      <pre class="code">GET /payments?filter[terminal.id][eq]=24&filter[type][eq]=Sale&page=1&per-page=20</pre>
+    </div>
+  </section>
+
+  <section class="section" id="pg-view">
+    <h3 class="group-title">View Payment</h3>
+    <p class="section-desc">Fetch a single transaction by its ID, with full detail including card info, response codes, history, and order data.</p>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-get">GET</span>
+        <span class="endpoint-path">/payment/<span class="param">{id}</span></span>
+        <span class="endpoint-desc-inline">Single transaction</span>
+      </div>
+    </div>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">Request</span></div>
+      <pre class="code">curl -H "Authorization: Bearer &lt;accessToken&gt;" \
+     https://gateway.kitdashboard.com/payment/92</pre>
+    </div>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">Response</span></div>
+      <pre class="code">{
+  <span class="key">"id"</span>: <span class="str">"92"</span>,
+  <span class="key">"amount"</span>: <span class="str">"1.10"</span>,
+  <span class="key">"type"</span>: <span class="str">"Auth"</span>,
+  <span class="key">"level"</span>: <span class="num">1</span>,
+  <span class="key">"terminal"</span>: { <span class="key">"id"</span>: <span class="num">481771</span> },
+  <span class="key">"card"</span>: {
+    <span class="key">"bin"</span>: <span class="num">453922</span>, <span class="key">"name"</span>: <span class="str">"John Doe"</span>,
+    <span class="key">"number"</span>: <span class="num">4489</span>, <span class="key">"exp"</span>: <span class="str">"2030-12-31"</span>,
+    <span class="key">"verification"</span>: { <span class="key">"cvv"</span>: <span class="str">"M"</span>, <span class="key">"address"</span>: <span class="str">"Y"</span> }
+  },
+  <span class="key">"status"</span>: <span class="str">"Approved"</span>,
+  <span class="key">"captured"</span>: <span class="kw">true</span>,
+  <span class="key">"refunded"</span>: <span class="kw">false</span>
+}</pre>
+    </div>
+  </section>
+
+  <section class="section" id="pg-sale">
+    <h3 class="group-title">Sale</h3>
+    <p class="section-desc">Charge a card in one step — authorization + capture together. Use when you don't need a separate capture step. Supports L1/L2/L3 processing and Soft/Dynamic Descriptors.</p>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-post">POST</span>
+        <span class="endpoint-path">/payment/sale</span>
+        <span class="endpoint-desc-inline">Authorize + capture</span>
+      </div>
+    </div>
+    <table class="params-table">
+      <tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
+      <tr><td class="param-name">terminal.id</td><td class="param-type">Integer</td><td><span class="tag tag-required">required</span></td><td>Your Dashboard Terminal ID</td></tr>
+      <tr><td class="param-name">amount</td><td class="param-type">Number</td><td><span class="tag tag-required">required</span></td><td>Charge amount (e.g. "1.10")</td></tr>
+      <tr><td class="param-name">card.number</td><td class="param-type">Integer</td><td><span class="tag tag-required">required</span></td><td>Full card number</td></tr>
+      <tr><td class="param-name">card.exp</td><td class="param-type">String</td><td><span class="tag tag-required">required</span></td><td>Expiry MM/YY</td></tr>
+      <tr><td class="param-name">card.cvv</td><td class="param-type">String</td><td><span class="tag tag-optional">optional</span></td><td>Card security code</td></tr>
+      <tr><td class="param-name">card.name</td><td class="param-type">String</td><td><span class="tag tag-optional">optional</span></td><td>Cardholder name</td></tr>
+      <tr><td class="param-name">card.address</td><td class="param-type">Object</td><td><span class="tag tag-optional">optional</span></td><td>Billing address for AVS check</td></tr>
+      <tr><td class="param-name">source</td><td class="param-type">String</td><td><span class="tag tag-optional">optional</span></td><td>"Internet", "Mail", "Phone", etc.</td></tr>
+      <tr><td class="param-name">level</td><td class="param-type">Integer</td><td><span class="tag tag-optional">optional</span></td><td>Processing level: 1, 2, or 3</td></tr>
+      <tr><td class="param-name">ip.address</td><td class="param-type">String</td><td><span class="tag tag-optional">optional</span></td><td>Customer IP</td></tr>
+      <tr><td class="param-name">externalId</td><td class="param-type">String</td><td><span class="tag tag-optional">optional</span></td><td>Your own reference ID</td></tr>
+      <tr><td class="param-name">order.*</td><td class="param-type">Object</td><td><span class="tag tag-optional">optional</span></td><td>Order details (id, date, invoice, description, items)</td></tr>
+    </table>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">Request (Level 1)</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre class="code">curl -X POST https://gateway.kitdashboard.com/payment/sale \
+  -H "Authorization: Bearer &lt;accessToken&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "terminal": { "id": 24 },
+    "amount": "1.10",
+    "source": "Internet",
+    "level": 1,
+    "card": {
+      "name": "John Wick",
+      "number": 5146312200000035,
+      "exp": "12/30",
+      "cvv": "998",
+      "address": { "country": "US", "state": "CA", "city": "Calabasas", "zip": "85284" }
+    },
+    "ip": { "address": "123.123.123.123" }
+  }'</pre>
+    </div>
+    <div class="info-box info-tip">
+      <div class="icon">💡</div>
+      <div><strong>Level 2 / 3 processing</strong> requires additional order-level data (tax amount, PO number, line items). It reduces interchange fees significantly for B2B transactions.</div>
+    </div>
+  </section>
+
+  <section class="section" id="pg-auth">
+    <h3 class="group-title">Auth (Pre-Authorization)</h3>
+    <p class="section-desc">Authorize a card without immediately capturing funds. The card is checked and a hold placed. You then capture later. Common for hotels, car rentals, and restaurants.</p>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-post">POST</span>
+        <span class="endpoint-path">/payment/auth</span>
+        <span class="endpoint-desc-inline">Hold funds, capture later</span>
+      </div>
+    </div>
+    <div class="info-box info-tip">
+      <div class="icon">💡</div>
+      <div>After an Auth, use <strong>Capture</strong> to actually collect the funds. Partial capture is supported — you can capture less than the authorized amount.</div>
+    </div>
+    <h3 class="group-title">Auth Response Codes</h3>
+    <table class="params-table">
+      <tr><th>Code Type</th><th>Values</th><th>Meaning</th></tr>
+      <tr><td>Approval</td><td class="param-name">000–099</td><td>Transaction approved</td></tr>
+      <tr><td>Decline</td><td class="param-name">100–199</td><td>Card declined — do not retry same card</td></tr>
+      <tr><td>Error</td><td class="param-name">200+</td><td>Processing error — may be retried</td></tr>
+    </table>
+    <h3 class="group-title">Verification (CVV / AVS)</h3>
+    <table class="params-table">
+      <tr><th>CVV Code</th><th>Meaning</th></tr>
+      <tr><td class="param-name">M</td><td>Match — CVV verified</td></tr>
+      <tr><td class="param-name">N</td><td>No match</td></tr>
+      <tr><td class="param-name">P</td><td>Not processed</td></tr>
+      <tr><td class="param-name">S</td><td>Issuer not participating</td></tr>
+      <tr><td class="param-name">U</td><td>Unverifiable</td></tr>
+    </table>
+    <table class="params-table" style="margin-top:12px">
+      <tr><th>AVS Code</th><th>Meaning</th></tr>
+      <tr><td class="param-name">Y</td><td>Address + ZIP match</td></tr>
+      <tr><td class="param-name">A</td><td>Address matches, ZIP does not</td></tr>
+      <tr><td class="param-name">Z</td><td>ZIP matches, address does not</td></tr>
+      <tr><td class="param-name">N</td><td>Neither matches</td></tr>
+    </table>
+  </section>
+
+  <section class="section" id="pg-capture">
+    <h3 class="group-title">Capture</h3>
+    <p class="section-desc">Capture a previously authorized payment. Can capture the full amount or partial (less than authorized).</p>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-post">POST</span>
+        <span class="endpoint-path">/payment/<span class="param">{id}</span>/capture</span>
+        <span class="endpoint-desc-inline">Capture authorized funds</span>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-post">POST</span>
+        <span class="endpoint-path">/payment/<span class="param">{id}</span>/capture/partial</span>
+        <span class="endpoint-desc-inline">Partial capture</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="pg-refund">
+    <h3 class="group-title">Refund</h3>
+    <p class="section-desc">Refund a captured transaction. Full or partial refunds are supported.</p>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-post">POST</span>
+        <span class="endpoint-path">/payment/<span class="param">{id}</span>/refund</span>
+        <span class="endpoint-desc-inline">Full refund</span>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-post">POST</span>
+        <span class="endpoint-path">/payment/<span class="param">{id}</span>/refund/partial</span>
+        <span class="endpoint-desc-inline">Partial refund</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="pg-cardauth">
+    <h3 class="group-title">Card Authentication</h3>
+    <p class="section-desc">Verify a card is real and active without charging it. Returns a verification result — useful for adding cards to a customer vault before the first charge.</p>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-post">POST</span>
+        <span class="endpoint-path">/payment/card-authentication</span>
+        <span class="endpoint-desc-inline">Verify card without charging</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="pg-token">
+    <h3 class="group-title">Generate Token</h3>
+    <p class="section-desc">Tokenize a card number for later use. The token can be stored safely and used in place of the raw card number for future charges.</p>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-post">POST</span>
+        <span class="endpoint-path">/payment/generate-token</span>
+        <span class="endpoint-desc-inline">Tokenize a card</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="pg-hosted-form">
+    <h3 class="group-title">Hosted Form</h3>
+    <p class="section-desc">A pre-built, PCI-compliant payment form hosted by KIT. You pass configuration and get back a form URL or embed code. Customer card data never touches your server.</p>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-post">POST</span>
+        <span class="endpoint-path">/hosted-form</span>
+        <span class="endpoint-desc-inline">Create a hosted payment form</span>
+      </div>
+    </div>
+    <div class="info-box info-success">
+      <div class="icon">✅</div>
+      <div><strong>Simplest PCI path.</strong> Use this if you don't want to handle card data at all. The hosted form captures everything and posts the tokenized result to your callback URL.</div>
+    </div>
+  </section>
+
+  <section class="section" id="pg-hosted-fields">
+    <h3 class="group-title">Hosted Fields</h3>
+    <p class="section-desc">Embeddable iFrame fields for card number, expiry, and CVV. They render inside your UI but live on KIT's domain, so you stay out of PCI scope. Get a token from the fields, then use it to charge.</p>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-post">POST</span>
+        <span class="endpoint-path">/hosted-fields/token</span>
+        <span class="endpoint-desc-inline">Exchange field data for a payment token</span>
+      </div>
+    </div>
+    <div class="info-box info-tip">
+      <div class="icon">💡</div>
+      <div><strong>Best for custom UIs.</strong> Your checkout looks exactly how you want it, but card numbers never reach your server. Use the returned token in any charge endpoint.</div>
+    </div>
+  </section>
+
+  <hr class="divider">
+
+  <!-- DASHBOARD API -->
+  <section class="section" id="db-boarding">
+    <div class="breadcrumb">Dashboard API</div>
+    <h2 class="section-title">📝 Boarding Applications</h2>
+    <p class="section-desc">The full merchant onboarding workflow. An application belongs to a Campaign (which controls pricing, processing type, fees). The flow is linear — create first, then fill in sections, then submit.</p>
+    <div class="info-box info-success">
+      <div class="icon">📋</div>
+      <div>
+        <strong>Standard boarding flow:</strong><br>
+        1. Create application → get ID<br>
+        2. Update company + DBA data<br>
+        3. Add/update Principals<br>
+        4. Fill Processing or ACH section<br>
+        5. Upload + assign Documents<br>
+        6. Update Fees if needed<br>
+        7. Request eSign (or use AutoSign)<br>
+        8. Set status to <code>Underwriting</code>
+      </div>
+    </div>
+
+    <h3 class="group-title">Application CRUD</h3>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-get">GET</span>
+        <span class="endpoint-path">/api/boarding-application</span>
+        <span class="endpoint-desc-inline">List all applications</span>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-post">POST</span>
+        <span class="endpoint-path">/api/boarding-application</span>
+        <span class="endpoint-desc-inline">Create new application</span>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-get">GET</span>
+        <span class="endpoint-path">/api/boarding-application/<span class="param">{id}</span></span>
+        <span class="endpoint-desc-inline">View application</span>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-put">PUT</span>
+        <span class="endpoint-path">/api/boarding-application/<span class="param">{id}</span></span>
+        <span class="endpoint-desc-inline">Update application</span>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-delete">DELETE</span>
+        <span class="endpoint-path">/api/boarding-application/<span class="param">{id}</span></span>
+        <span class="endpoint-desc-inline">Delete application</span>
+      </div>
+    </div>
+
+    <h3 class="group-title">Application Sections</h3>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-get">GET</span>
+        <span class="endpoint-path">/api/boarding-application/<span class="param">{id}</span>/principals</span>
+        <span class="endpoint-desc-inline">View principals</span>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-put">PUT</span>
+        <span class="endpoint-path">/api/boarding-application/<span class="param">{id}</span>/principals</span>
+        <span class="endpoint-desc-inline">Update principals</span>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-get">GET</span>
+        <span class="endpoint-path">/api/boarding-application/<span class="param">{id}</span>/processing</span>
+        <span class="endpoint-desc-inline">Processing section</span>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-put">PUT</span>
+        <span class="endpoint-path">/api/boarding-application/<span class="param">{id}</span>/processing</span>
+        <span class="endpoint-desc-inline">Update processing</span>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-get">GET</span>
+        <span class="endpoint-path">/api/boarding-application/<span class="param">{id}</span>/ach</span>
+        <span class="endpoint-desc-inline">ACH banking section</span>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-put">PUT</span>
+        <span class="endpoint-path">/api/boarding-application/<span class="param">{id}</span>/ach</span>
+        <span class="endpoint-desc-inline">Update ACH banking</span>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-get">GET</span>
+        <span class="endpoint-path">/api/boarding-application/<span class="param">{id}</span>/documents</span>
+        <span class="endpoint-desc-inline">View documents</span>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-put">PUT</span>
+        <span class="endpoint-path">/api/boarding-application/<span class="param">{id}</span>/documents</span>
+        <span class="endpoint-desc-inline">Assign/update documents</span>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-get">GET</span>
+        <span class="endpoint-path">/api/boarding-application/<span class="param">{id}</span>/fees</span>
+        <span class="endpoint-desc-inline">View fees</span>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-put">PUT</span>
+        <span class="endpoint-path">/api/boarding-application/<span class="param">{id}</span>/fees</span>
+        <span class="endpoint-desc-inline">Update fees</span>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-get">GET</span>
+        <span class="endpoint-path">/api/boarding-application/<span class="param">{id}</span>/url</span>
+        <span class="endpoint-desc-inline">Get eSign URL</span>
+      </div>
+    </div>
+
+    <h3 class="group-title">Campaigns & Reference Data</h3>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-get">GET</span>
+        <span class="endpoint-path">/api/boarding-application/campaigns</span>
+        <span class="endpoint-desc-inline">List available campaigns</span>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-get">GET</span>
+        <span class="endpoint-path">/api/boarding-application/mcc</span>
+        <span class="endpoint-desc-inline">Search MCC codes</span>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-get">GET</span>
+        <span class="endpoint-path">/api/boarding-application/equipment</span>
+        <span class="endpoint-desc-inline">View available equipment</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="db-dba">
+    <h2 class="section-title">🏢 DBA (Merchant Accounts)</h2>
+    <p class="section-desc">A DBA (Doing Business As) represents an active merchant account in the system. Once boarding is approved, the merchant becomes a DBA with its own terminals.</p>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-get">GET</span>
+        <span class="endpoint-path">/api/dba</span>
+        <span class="endpoint-desc-inline">List all merchants</span>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-get">GET</span>
+        <span class="endpoint-path">/api/dba/<span class="param">{id}</span></span>
+        <span class="endpoint-desc-inline">View merchant details</span>
+      </div>
+    </div>
+    <h3 class="group-title">Terminals (under DBA)</h3>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-get">GET</span>
+        <span class="endpoint-path">/api/dba/<span class="param">{dbaId}</span>/terminals</span>
+        <span class="endpoint-desc-inline">List terminals for a merchant</span>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-get">GET</span>
+        <span class="endpoint-path">/api/dba/<span class="param">{dbaId}</span>/terminal/<span class="param">{id}</span></span>
+        <span class="endpoint-desc-inline">View a single terminal</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="db-reporting">
+    <h2 class="section-title">📊 Reporting</h2>
+    <p class="section-desc">All transaction history, settlements, chargebacks, reserves, and payouts. All endpoints support full filter + pagination.</p>
+
+    <h3 class="group-title">Authorizations (Transaction History)</h3>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-get">GET</span>
+        <span class="endpoint-path">/api/reporting/authorizations</span>
+        <span class="endpoint-desc-inline">All auth/transaction records</span>
+      </div>
+    </div>
+    <table class="params-table">
+      <tr><th>Status Values</th><th>Meaning</th></tr>
+      <tr><td class="param-name">Approved</td><td>Successfully processed</td></tr>
+      <tr><td class="param-name">Declined</td><td>Card issuer declined</td></tr>
+      <tr><td class="param-name">Error</td><td>Processing error</td></tr>
+      <tr><td class="param-name">Void</td><td>Transaction voided</td></tr>
+    </table>
+
+    <h3 class="group-title">Batches</h3>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-get">GET</span>
+        <span class="endpoint-path">/api/reporting/batches</span>
+        <span class="endpoint-desc-inline">List all settlement batches</span>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-get">GET</span>
+        <span class="endpoint-path">/api/reporting/batches/summary</span>
+        <span class="endpoint-desc-inline">Batch totals summary</span>
+      </div>
+    </div>
+
+    <h3 class="group-title">Payouts</h3>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-get">GET</span>
+        <span class="endpoint-path">/api/reporting/payouts</span>
+        <span class="endpoint-desc-inline">List payouts</span>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-get">GET</span>
+        <span class="endpoint-path">/api/reporting/payout/<span class="param">{id}</span></span>
+        <span class="endpoint-desc-inline">View payout detail</span>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-get">GET</span>
+        <span class="endpoint-path">/api/reporting/payout/<span class="param">{id}</span>/export</span>
+        <span class="endpoint-desc-inline">Export payout (CSV/PDF)</span>
+      </div>
+    </div>
+
+    <h3 class="group-title">Chargebacks</h3>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-get">GET</span>
+        <span class="endpoint-path">/api/reporting/chargebacks</span>
+        <span class="endpoint-desc-inline">List chargebacks</span>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-get">GET</span>
+        <span class="endpoint-path">/api/reporting/chargeback/<span class="param">{id}</span></span>
+        <span class="endpoint-desc-inline">View chargeback detail</span>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-post">POST</span>
+        <span class="endpoint-path">/api/reporting/chargeback/<span class="param">{id}</span>/dispute/upload</span>
+        <span class="endpoint-desc-inline">Upload dispute evidence</span>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-post">POST</span>
+        <span class="endpoint-path">/api/reporting/chargeback/<span class="param">{id}</span>/dispute</span>
+        <span class="endpoint-desc-inline">Submit dispute</span>
+      </div>
+    </div>
+
+    <h3 class="group-title">Other Reports</h3>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-get">GET</span>
+        <span class="endpoint-path">/api/reporting/reserve</span>
+        <span class="endpoint-desc-inline">Reserve balance & history</span>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-get">GET</span>
+        <span class="endpoint-path">/api/reporting/fraud-report</span>
+        <span class="endpoint-desc-inline">Fraud report</span>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-post">POST</span>
+        <span class="endpoint-path">/api/reporting/report</span>
+        <span class="endpoint-desc-inline">Request a custom report</span>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-get">GET</span>
+        <span class="endpoint-path">/api/reporting/report/<span class="param">{id}</span>/status</span>
+        <span class="endpoint-desc-inline">Check report generation status</span>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge badge-get">GET</span>
+        <span class="endpoint-path">/api/reporting/report/<span class="param">{id}</span>/download</span>
+        <span class="endpoint-desc-inline">Download completed report</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="db-cv">
+    <h2 class="section-title">👤 Customer Vault</h2>
+    <p class="section-desc">Store customer profiles, card data (tokenized), billing/shipping addresses, and recurring schedules. All card numbers are stored as tokens — raw PAN never persists.</p>
+
+    <h3 class="group-title">Customers</h3>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-get">GET</span><span class="endpoint-path">/api/customer-vault/customers</span><span class="endpoint-desc-inline">List customers</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-get">GET</span><span class="endpoint-path">/api/customer-vault/customer/<span class="param">{id}</span></span><span class="endpoint-desc-inline">View customer</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-post">POST</span><span class="endpoint-path">/api/customer-vault/customer</span><span class="endpoint-desc-inline">Create customer</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-put">PUT</span><span class="endpoint-path">/api/customer-vault/customer/<span class="param">{id}</span></span><span class="endpoint-desc-inline">Update customer</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-delete">DELETE</span><span class="endpoint-path">/api/customer-vault/customer/<span class="param">{id}</span></span><span class="endpoint-desc-inline">Delete customer</span></div></div>
+
+    <h3 class="group-title">Cards (Customer Wallet)</h3>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-get">GET</span><span class="endpoint-path">/api/customer-vault/<span class="param">{customerId}</span>/cards</span><span class="endpoint-desc-inline">List cards</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-get">GET</span><span class="endpoint-path">/api/customer-vault/<span class="param">{customerId}</span>/card/<span class="param">{id}</span></span><span class="endpoint-desc-inline">View card</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-post">POST</span><span class="endpoint-path">/api/customer-vault/<span class="param">{customerId}</span>/card</span><span class="endpoint-desc-inline">Add card</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-put">PUT</span><span class="endpoint-path">/api/customer-vault/<span class="param">{customerId}</span>/card/<span class="param">{id}</span>/exp</span><span class="endpoint-desc-inline">Update expiry date</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-put">PUT</span><span class="endpoint-path">/api/customer-vault/<span class="param">{customerId}</span>/card/<span class="param">{id}</span>/status</span><span class="endpoint-desc-inline">Change card status</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-delete">DELETE</span><span class="endpoint-path">/api/customer-vault/<span class="param">{customerId}</span>/card/<span class="param">{id}</span></span><span class="endpoint-desc-inline">Remove card</span></div></div>
+
+    <h3 class="group-title">Billing & Shipping Info</h3>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-get">GET</span><span class="endpoint-path">/api/customer-vault/<span class="param">{customerId}</span>/billing</span><span class="endpoint-desc-inline">List billing addresses</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-post">POST</span><span class="endpoint-path">/api/customer-vault/<span class="param">{customerId}</span>/billing</span><span class="endpoint-desc-inline">Add billing address</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-put">PUT</span><span class="endpoint-path">/api/customer-vault/<span class="param">{customerId}</span>/billing/<span class="param">{id}</span></span><span class="endpoint-desc-inline">Update billing</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-get">GET</span><span class="endpoint-path">/api/customer-vault/<span class="param">{customerId}</span>/shipping</span><span class="endpoint-desc-inline">List shipping addresses</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-post">POST</span><span class="endpoint-path">/api/customer-vault/<span class="param">{customerId}</span>/shipping</span><span class="endpoint-desc-inline">Add shipping address</span></div></div>
+  </section>
+
+  <section class="section" id="db-ach">
+    <h2 class="section-title">🏦 ACH (Bank Transfers)</h2>
+    <p class="section-desc">ACH enables direct bank account debits — lower fees than cards, no chargebacks from card networks. Customers need a bank account on file (routing + account number).</p>
+
+    <h3 class="group-title">ACH Customer Accounts</h3>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-get">GET</span><span class="endpoint-path">/api/customer-vault/<span class="param">{customerId}</span>/accounts</span><span class="endpoint-desc-inline">List bank accounts</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-post">POST</span><span class="endpoint-path">/api/customer-vault/<span class="param">{customerId}</span>/account</span><span class="endpoint-desc-inline">Add bank account</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-put">PUT</span><span class="endpoint-path">/api/customer-vault/<span class="param">{customerId}</span>/account/<span class="param">{id}</span></span><span class="endpoint-desc-inline">Update bank account</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-delete">DELETE</span><span class="endpoint-path">/api/customer-vault/<span class="param">{customerId}</span>/account/<span class="param">{id}</span></span><span class="endpoint-desc-inline">Remove bank account</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-get">GET</span><span class="endpoint-path">/api/aba/<span class="param">{routingNumber}</span></span><span class="endpoint-desc-inline">Validate ABA routing number</span></div></div>
+  </section>
+
+  <section class="section" id="db-attachments">
+    <h2 class="section-title">📎 Attachments</h2>
+    <p class="section-desc">General-purpose file storage for the platform. Supports standard uploads and chunked uploads for large files. Attachments can be linked to boarding applications, tickets, and other entities.</p>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-get">GET</span><span class="endpoint-path">/api/attachment</span><span class="endpoint-desc-inline">List attachments</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-get">GET</span><span class="endpoint-path">/api/attachment/<span class="param">{id}</span></span><span class="endpoint-desc-inline">View attachment metadata</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-get">GET</span><span class="endpoint-path">/api/attachment/<span class="param">{id}</span>/view</span><span class="endpoint-desc-inline">Open in browser</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-get">GET</span><span class="endpoint-path">/api/attachment/<span class="param">{id}</span>/download</span><span class="endpoint-desc-inline">Download file</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-post">POST</span><span class="endpoint-path">/api/attachment</span><span class="endpoint-desc-inline">Standard upload</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-post">POST</span><span class="endpoint-path">/api/attachment/temp</span><span class="endpoint-desc-inline">Temporary upload (before linking)</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-post">POST</span><span class="endpoint-path">/api/attachment/chunk/init</span><span class="endpoint-desc-inline">Initialize chunked upload</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-post">POST</span><span class="endpoint-path">/api/attachment/chunk/<span class="param">{uploadId}</span></span><span class="endpoint-desc-inline">Upload chunk</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-delete">DELETE</span><span class="endpoint-path">/api/attachment/<span class="param">{id}</span></span><span class="endpoint-desc-inline">Delete attachment</span></div></div>
+    <div class="info-box info-tip">
+      <div class="icon">💡</div>
+      <div><strong>Chunked upload flow:</strong> Initialize → get uploadId → POST chunks sequentially → finalize. Use this for files larger than a few MB to avoid timeouts.</div>
+    </div>
+  </section>
+
+  <section class="section" id="db-tickets">
+    <h2 class="section-title">🎫 Tickets (Support)</h2>
+    <p class="section-desc">Internal ticketing system for merchant support. Tickets have responses, notes, attachments, and categories. Notes are internal (not visible to merchants); Responses are visible.</p>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-get">GET</span><span class="endpoint-path">/api/ticket</span><span class="endpoint-desc-inline">List tickets</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-get">GET</span><span class="endpoint-path">/api/ticket/<span class="param">{id}</span></span><span class="endpoint-desc-inline">View ticket</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-post">POST</span><span class="endpoint-path">/api/ticket</span><span class="endpoint-desc-inline">Create ticket</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-put">PUT</span><span class="endpoint-path">/api/ticket/<span class="param">{id}</span></span><span class="endpoint-desc-inline">Update ticket (status, etc.)</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-delete">DELETE</span><span class="endpoint-path">/api/ticket/<span class="param">{id}</span></span><span class="endpoint-desc-inline">Delete ticket</span></div></div>
+    <h3 class="group-title">Ticket Responses</h3>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-get">GET</span><span class="endpoint-path">/api/ticket/<span class="param">{id}</span>/responses</span><span class="endpoint-desc-inline">List responses</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-post">POST</span><span class="endpoint-path">/api/ticket/<span class="param">{id}</span>/response</span><span class="endpoint-desc-inline">Add response</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-put">PUT</span><span class="endpoint-path">/api/ticket/<span class="param">{id}</span>/response/<span class="param">{responseId}</span></span><span class="endpoint-desc-inline">Update response</span></div></div>
+    <h3 class="group-title">Ticket Notes (Internal)</h3>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-get">GET</span><span class="endpoint-path">/api/ticket/<span class="param">{id}</span>/notes</span><span class="endpoint-desc-inline">List internal notes</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-post">POST</span><span class="endpoint-path">/api/ticket/<span class="param">{id}</span>/note</span><span class="endpoint-desc-inline">Add internal note</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-get">GET</span><span class="endpoint-path">/api/ticket/categories</span><span class="endpoint-desc-inline">List ticket categories</span></div></div>
+  </section>
+
+  <section class="section" id="db-residuals">
+    <h2 class="section-title">💰 Residuals</h2>
+    <p class="section-desc">Agent/ISO revenue sharing reports. Shows what's owed to each agent based on processed volume.</p>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-get">GET</span><span class="endpoint-path">/api/residual</span><span class="endpoint-desc-inline">List residual records</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-get">GET</span><span class="endpoint-path">/api/residual/<span class="param">{id}</span></span><span class="endpoint-desc-inline">View residual detail</span></div></div>
+  </section>
+
+  <section class="section" id="db-address">
+    <h2 class="section-title">🗺️ Address Check</h2>
+    <p class="section-desc">Validate and look up geographic data — countries, states, cities, and zip codes. Useful for validating merchant or customer addresses during onboarding.</p>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-get">GET</span><span class="endpoint-path">/api/address/countries</span><span class="endpoint-desc-inline">List all countries</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-get">GET</span><span class="endpoint-path">/api/address/states</span><span class="endpoint-desc-inline">List states by country</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-get">GET</span><span class="endpoint-path">/api/address/cities</span><span class="endpoint-desc-inline">Cities & zip codes</span></div></div>
+  </section>
+
+  <section class="section" id="db-bin">
+    <h2 class="section-title">🔢 BIN Lookup</h2>
+    <p class="section-desc">Identify a card's issuing bank, card brand, card type, and country from the first 6 digits of the card number (the BIN).</p>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-get">GET</span><span class="endpoint-path">/api/bin/<span class="param">{binNumber}</span></span><span class="endpoint-desc-inline">Look up a BIN</span></div></div>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">Example</span></div>
+      <pre class="code">GET /api/bin/453922
+<span class="comment">→ Returns: card brand, issuing bank, country, card type (credit/debit)</span></pre>
+    </div>
+  </section>
+
+  <hr class="divider">
+
+  <!-- RECURRING -->
+  <section class="section" id="recurring">
+    <div class="breadcrumb">Recurring</div>
+    <h2 class="section-title">🔄 Recurring Payments</h2>
+    <p class="section-desc">Schedule automatic payments for a customer on any interval using cron expressions. The system retries failed payments up to 3 times per card, and if the customer has multiple cards on file it tries each one in order.</p>
+    <div class="info-box info-tip">
+      <div class="icon">🔁</div>
+      <div><strong>Retry logic:</strong> Up to 3 attempts per card. If a customer has multiple cards and no specific card is set, each card is tried in the order saved in their wallet.</div>
+    </div>
+
+    <h3 class="group-title">Object Fields</h3>
+    <table class="params-table">
+      <tr><th>Field</th><th>Type</th><th>Description</th><th>Tags</th></tr>
+      <tr><td class="param-name">id</td><td class="param-type">Integer</td><td>Unique ID</td><td><span class="tag tag-readonly">readonly</span></td></tr>
+      <tr><td class="param-name">name</td><td class="param-type">String</td><td>Plan name</td><td><span class="tag tag-required">required</span><span class="tag tag-filterable">filterable</span></td></tr>
+      <tr><td class="param-name">amount</td><td class="param-type">Number</td><td>Charge amount per cycle</td><td><span class="tag tag-required">required</span><span class="tag tag-filterable">filterable</span></td></tr>
+      <tr><td class="param-name">cronExpression</td><td class="param-type">String</td><td>Billing frequency (cron format)</td><td><span class="tag tag-required">required</span></td></tr>
+      <tr><td class="param-name">valid.from</td><td class="param-type">Datetime</td><td>Start date</td><td><span class="tag tag-filterable">filterable</span></td></tr>
+      <tr><td class="param-name">valid.to</td><td class="param-type">Datetime</td><td>End date</td><td><span class="tag tag-filterable">filterable</span></td></tr>
+      <tr><td class="param-name">payments.max</td><td class="param-type">Integer</td><td>Max total payments</td><td><span class="tag tag-filterable">filterable</span></td></tr>
+      <tr><td class="param-name">terminal.id</td><td class="param-type">Integer</td><td>Which terminal to charge through</td><td><span class="tag tag-required">required</span></td></tr>
+      <tr><td class="param-name">customer.id</td><td class="param-type">Integer</td><td>Customer in the Vault</td><td><span class="tag tag-required">required</span></td></tr>
+      <tr><td class="param-name">customer.card.id</td><td class="param-type">Integer</td><td>Specific card to use (optional)</td><td><span class="tag tag-optional">optional</span></td></tr>
+      <tr><td class="param-name">status</td><td class="param-type">ENUM</td><td>Active, Completed, Issue</td><td><span class="tag tag-readonly">readonly</span><span class="tag tag-filterable">filterable</span></td></tr>
+    </table>
+
+    <h3 class="group-title">Endpoints</h3>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-get">GET</span><span class="endpoint-path">/api/customer-vault/<span class="param">{customerId}</span>/recurring-payments</span><span class="endpoint-desc-inline">List schedules</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-get">GET</span><span class="endpoint-path">/api/customer-vault/<span class="param">{customerId}</span>/recurring-payment/<span class="param">{id}</span></span><span class="endpoint-desc-inline">View schedule</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-post">POST</span><span class="endpoint-path">/api/customer-vault/<span class="param">{customerId}</span>/recurring-payment</span><span class="endpoint-desc-inline">Create schedule</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-put">PUT</span><span class="endpoint-path">/api/customer-vault/<span class="param">{customerId}</span>/recurring-payment/<span class="param">{id}</span></span><span class="endpoint-desc-inline">Update schedule</span></div></div>
+
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">Create recurring — cURL</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre class="code">curl -X POST https://kitdashboard.com/api/customer-vault/1/recurring-payment \
+  -H "Authorization: Bearer &lt;accessToken&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Monthly Subscription",
+    "amount": 29.99,
+    "cronExpression": "0 9 1 * *",  <span class="comment">// 9am on the 1st of every month</span>
+    "valid": { "from": "2024-01-01", "to": "2025-01-01" },
+    "payments": { "max": 12 },
+    "terminal": { "id": 47 },
+    "customer": { "id": 1, "card": { "id": 2 } }
+  }'</pre>
+    </div>
+  </section>
+
+  <hr class="divider">
+
+  <!-- 3DS -->
+  <section class="section" id="threeds">
+    <div class="breadcrumb">Security</div>
+    <h2 class="section-title">🛡️ 3D Secure</h2>
+    <p class="section-desc">3DS adds an extra authentication step (like a one-time code from the card's bank) before authorizing a payment. It shifts liability for fraud from you to the card issuer when used.</p>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-post">POST</span><span class="endpoint-path">/3ds/create</span><span class="endpoint-desc-inline">Initiate 3DS session</span></div></div>
+    <div class="endpoint-card"><div class="endpoint-header"><span class="method-badge badge-post">POST</span><span class="endpoint-path">/3ds/<span class="param">{id}</span>/check</span><span class="endpoint-desc-inline">Check 3DS status</span></div></div>
+    <table class="params-table">
+      <tr><th>Field</th><th>Required</th><th>Description</th></tr>
+      <tr><td class="param-name">terminal.id</td><td><span class="tag tag-required">required</span></td><td>Dashboard Terminal ID</td></tr>
+      <tr><td class="param-name">amount</td><td><span class="tag tag-required">required</span></td><td>Transaction amount</td></tr>
+      <tr><td class="param-name">card.number</td><td><span class="tag tag-required">required</span></td><td>Full card number</td></tr>
+      <tr><td class="param-name">card.exp</td><td><span class="tag tag-required">required</span></td><td>Expiry MM/YY</td></tr>
+    </table>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">Create 3DS session</span></div>
+      <pre class="code">curl -X POST https://gateway.kitdashboard.com/3ds/create \
+  -H "Authorization: Bearer &lt;accessToken&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "terminal": { "id": 1 },
+    "amount": "45.00",
+    "card": { "number": 5555555555554444, "exp": "12/25" }
+  }'
+<span class="comment">// Returns: { "id": "1" } — use this id to poll /3ds/1/check</span></pre>
+    </div>
+  </section>
+
+  <!-- WEBHOOKS -->
+  <section class="section" id="webhooks">
+    <div class="breadcrumb">Security</div>
+    <h2 class="section-title">🔔 Webhooks</h2>
+    <p class="section-desc">Subscribe to real-time event notifications. When something happens in the system (new transaction, chargeback, status change), KIT POSTs a JSON payload to your endpoint. Configure webhook URLs and signing secrets in the Dashboard.</p>
+
+    <h3 class="group-title">Webhook Object</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">Base structure</span></div>
+      <pre class="code">{
+  <span class="key">"id"</span>:     <span class="num">51</span>,              <span class="comment">// Event ID</span>
+  <span class="key">"module"</span>: <span class="str">"transaction"</span>,   <span class="comment">// Event group</span>
+  <span class="key">"action"</span>: <span class="str">"create"</span>,        <span class="comment">// Specific event</span>
+  <span class="key">"date"</span>:   <span class="str">"2025-11-17 15:01:03"</span>,
+  <span class="key">"data"</span>:   { <span class="comment">/* Event payload */</span> }
+}</pre>
+    </div>
+
+    <h3 class="group-title">Signature Verification</h3>
+    <p class="section-desc">Every webhook includes a <code>Webhook-Signature</code> header — a SHA-512 hash of <code>webhookSignature + id + module + action + date</code>. Always verify it to confirm the event came from KIT POS.</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">Verify in Node.js</span></div>
+      <pre class="code">const crypto = require('crypto');
+const expected = crypto
+  .createHash('sha512')
+  .update(secret + id + module + action + date)
+  .digest('hex');
+const valid = expected === req.headers['webhook-signature'];</pre>
+    </div>
+
+    <h3 class="group-title">All Event Types</h3>
+    <div class="webhook-grid">
+      <div class="webhook-event">
+        <div class="webhook-module">💳 Transaction</div>
+        <div class="webhook-action">create — payment made</div>
+        <div class="webhook-action">create — refund made</div>
+        <div class="webhook-action">create — recurring fired</div>
+        <div class="webhook-action">highRiskAuthorizationWarning</div>
+      </div>
+      <div class="webhook-event">
+        <div class="webhook-module">🏦 ACH</div>
+        <div class="webhook-action">create — new ACH record</div>
+        <div class="webhook-action">updateStatus — status changed</div>
+        <div class="webhook-action">createCustomer — customer added</div>
+      </div>
+      <div class="webhook-event">
+        <div class="webhook-module">⚔️ Chargeback</div>
+        <div class="webhook-action">create — new chargeback</div>
+        <div class="webhook-action">update — chargeback updated</div>
+      </div>
+      <div class="webhook-event">
+        <div class="webhook-module">🎫 Ticket</div>
+        <div class="webhook-action">created</div>
+        <div class="webhook-action">statusChanged</div>
+        <div class="webhook-action">noteAdded / noteUpdated</div>
+        <div class="webhook-action">responseAdded / responseUpdated</div>
+      </div>
+      <div class="webhook-event">
+        <div class="webhook-module">📝 Boarding Application</div>
+        <div class="webhook-action">statusChanged</div>
+        <div class="webhook-action">addendumAdded</div>
+        <div class="webhook-action">failedCheck</div>
+        <div class="webhook-action">noteAdded / noteUpdated</div>
+        <div class="webhook-action">preGenerated</div>
+        <div class="webhook-action">failedAutoApprove</div>
+      </div>
+    </div>
+
+    <h3 class="group-title">Transaction Webhook Example</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">Payment Created</span></div>
+      <pre class="code">{
+  <span class="key">"id"</span>: <span class="num">51</span>, <span class="key">"module"</span>: <span class="str">"transaction"</span>, <span class="key">"action"</span>: <span class="str">"create"</span>,
+  <span class="key">"date"</span>: <span class="str">"2025-11-17 15:01:03"</span>,
+  <span class="key">"data"</span>: {
+    <span class="key">"merchant"</span>: { <span class="key">"mid"</span>: <span class="num">1111111111</span>, <span class="key">"name"</span>: <span class="str">"The Continental Hotel"</span> },
+    <span class="key">"terminal"</span>: { <span class="key">"id"</span>: <span class="num">4429</span> },
+    <span class="key">"transaction"</span>: {
+      <span class="key">"id"</span>: <span class="num">1234</span>, <span class="key">"amount"</span>: <span class="num">3.00</span>, <span class="key">"status"</span>: <span class="str">"Approved"</span>,
+      <span class="key">"origin"</span>: <span class="str">"VirtualTerminal"</span>, <span class="key">"type"</span>: <span class="str">"Auth"</span>
+    }
+  }
+}</pre>
+    </div>
+
+    <h3 class="group-title">High Risk Authorization Warning Example</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">Risk Alert</span></div>
+      <pre class="code">{
+  <span class="key">"module"</span>: <span class="str">"transaction"</span>, <span class="key">"action"</span>: <span class="str">"highRiskAuthorizationWarning"</span>,
+  <span class="key">"data"</span>: {
+    <span class="key">"merchant"</span>: { <span class="key">"dba"</span>: <span class="str">"Example LLC"</span>, <span class="key">"mid"</span>: <span class="num">1111111111</span> },
+    <span class="key">"previousAuthorization"</span>: {
+      <span class="key">"amount"</span>: <span class="num">123</span>, <span class="key">"cardNumber"</span>: <span class="str">"411111******1111"</span>,
+      <span class="key">"transactionDate"</span>: <span class="str">"2025-11-17 15:01:03"</span>
+    },
+    <span class="key">"priorChargeback"</span>: {
+      <span class="key">"reasonDesc"</span>: <span class="str">"Cancelled Recurring"</span>,
+      <span class="key">"chargebackDetected"</span>: <span class="str">"Against You"</span>
+    }
+  }
+}</pre>
+    </div>
+  </section>
+
+  <div style="height: 48px;"></div>
+</main>
+
+<button class="scroll-top" onclick="window.scrollTo({top:0,behavior:'smooth'})" title="Back to top">↑</button>
+
+<script>
+function setActive(el) {
+  document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+  el.classList.add('active');
+}
+
+function copyCode(btn) {
+  const pre = btn.closest('.code-block').querySelector('pre');
+  navigator.clipboard.writeText(pre.textContent).then(() => {
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = 'Copy', 1500);
+  });
+}
+
+function filterNav(q) {
+  const items = document.querySelectorAll('#sidebarNav .nav-item');
+  q = q.toLowerCase();
+  items.forEach(item => {
+    item.style.display = !q || item.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+
+// Highlight active section on scroll
+const sections = document.querySelectorAll('.section[id]');
+const navLinks = document.querySelectorAll('.nav-item[href]');
+window.addEventListener('scroll', () => {
+  let current = '';
+  sections.forEach(s => { if (window.scrollY >= s.offsetTop - 80) current = s.id; });
+  navLinks.forEach(l => {
+    l.classList.toggle('active', l.getAttribute('href') === '#' + current);
+  });
+}, { passive: true });
+</script>
+</body>
+</html>
