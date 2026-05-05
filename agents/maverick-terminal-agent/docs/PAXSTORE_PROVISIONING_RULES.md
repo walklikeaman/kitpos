@@ -212,7 +212,79 @@ merchant remove-logo --name "Snack Zone"
 
 ---
 
-## 9. What this overrides
+## 9. VAR Row Selection — Default is First Row
+
+When a merchant has multiple VAR rows in the KIT API (multiple terminals), **always use the first row by default** unless instructed otherwise.
+
+```bash
+# Default — uses first VAR row automatically
+python3 scripts/paxstore_provision_from_pdf.py \
+  --merchant-number 201100305938 \
+  --var-source kit-api \
+  --pinpad-serial 2290664794 ...
+
+# Override — pick a specific row by V Number
+python3 scripts/paxstore_provision_from_pdf.py \
+  --merchant-number 201100305938 \
+  --var-source kit-api \
+  --var-v-number V6612507 \
+  --pinpad-serial 2290664794 ...
+
+# Override — pick a specific row by Terminal Number
+python3 scripts/paxstore_provision_from_pdf.py \
+  --merchant-number 201100305938 \
+  --var-source kit-api \
+  --var-terminal-number 7001 \
+  --pinpad-serial 2290664794 ...
+```
+
+Only use `--var-v-number` or `--var-terminal-number` when the user explicitly specifies which terminal/row to use. Do not guess or pick a non-first row without instruction.
+
+---
+
+## 10. Run History — Check Before Provisioning
+
+Every run (including plan-only and failures) is automatically appended to:
+
+```
+tmp/run-history/paxstore_runs.jsonl
+```
+
+**Before starting provisioning for any serial number, check if it was already processed:**
+
+```bash
+# Check if serial number was already provisioned successfully
+grep "2290664794" tmp/run-history/paxstore_runs.jsonl | grep '"status": "success"' | grep -v '"plan_only": true'
+
+# View all runs for a merchant
+grep "201100305938" tmp/run-history/paxstore_runs.jsonl | python3 -c "
+import sys, json
+for line in sys.stdin:
+    r = json.loads(line)
+    print(r['timestamp_utc'][:16], r['status'], r.get('pinpad_serial',''), r.get('pos_serial',''), r.get('steps',[]))
+"
+```
+
+**Rule:** If a serial number already has a `success` run with `submit: true` and `plan_only: false`, do not provision again — verify the state in PAX Store first and confirm with the user.
+
+### Fields recorded per run
+
+| Field | Description |
+|-------|-------------|
+| `timestamp_utc` | When the run started |
+| `status` | `success` or `failure` |
+| `plan_only` | `true` = dry run, no changes made |
+| `submit` | `true` = final submit buttons were clicked |
+| `pinpad_serial` / `pos_serial` | Device serial numbers |
+| `merchant_number` | MID |
+| `terminal_id_number` | Derived TID (V-number → 7-prefix) |
+| `steps` | Which steps were executed |
+| `error` | Error message if `status: failure` |
+| `mode` | `headless` or `headed` |
+
+---
+
+## 11. What this overrides
 
 These rules supersede earlier guidance in:
 
@@ -223,7 +295,7 @@ These rules supersede earlier guidance in:
 
 ---
 
-## 9. Reference: Template.js
+## 12. Reference: Template.js
 
 The user-recorded Puppeteer flow at `Template.js` (in `~/Downloads`) captures the exact click sequence for the Push Template path. Selectors:
 

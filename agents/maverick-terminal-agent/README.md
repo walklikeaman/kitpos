@@ -147,6 +147,8 @@ Rules in this flow:
 **Strict provisioning rules:** see [`docs/PAXSTORE_PROVISIONING_RULES.md`](docs/PAXSTORE_PROVISIONING_RULES.md). Highlights:
 
 - **Browser: headless by default.** Do not open Chrome manually. Use `--headed` only for debugging.
+- **VAR row: always use the first row by default.** Only use `--var-v-number` or `--var-terminal-number` when explicitly told to pick a specific row.
+- **Check run history before provisioning.** Every run is logged to `tmp/run-history/paxstore_runs.jsonl`. Grep the serial number before starting — if a `success` + `submit: true` run exists, confirm with the user before re-provisioning.
 - Merchant creation: only `Name = "{DBA} {MID}"`; no address / phone / state / city / merchant type.
 - Terminal creation: type SN first; Model auto-detects — do not pick it manually.
 - App install: Push Template (not a manual search for BroadPOS TSYS Sierra).

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 from datetime import datetime
+import os
 from datetime import UTC
 import json
 from dataclasses import dataclass
@@ -1131,8 +1132,8 @@ async def main() -> None:
         print(json.dumps(plan_summary, indent=2, ensure_ascii=True))
         return
 
-    username = input("PAX username: ").strip()
-    password = getpass("PAX password: ")
+    username = os.environ.get("PAX_USERNAME") or input("PAX username: ").strip()
+    password = os.environ.get("PAX_PASSWORD") or getpass("PAX password: ")
 
     try:
         async with async_playwright() as p:
