@@ -13,8 +13,8 @@ do NOT search the app catalog by hand, do NOT pick BroadPOS TSYS Sierra by
 name, do NOT touch the Model dropdown in App Detail.
 
 After OK lands you on the parameter editor, call `fill_tsys_parameters()`
-from `install_broadpos_app.py` (that helper is still valid) to populate the
-TSYS tab from VAR data, then click NEXT.
+from `paxstore_provision_from_pdf.py` to populate the TSYS tab from VAR data,
+then click NEXT.
 
 Recorded selectors (from user-supplied `Template.js`):
 

@@ -646,41 +646,8 @@ def make_data_for_device(data: PaxProvisioningData, device: TerminalDevice) -> P
     )
 
 
-async def download_var_from_kit_dashboard(
-    merchant_number: str,
-    *,
-    settings: Settings,
-    save_dir: Path,
-    headed: bool,
-    verification_code: str | None,
-) -> Path | None:
-    if not settings.kit_dashboard_email or not settings.kit_dashboard_password:
-        return None
-    if not KIT_DASHBOARD_AGENT_DIR.exists():
-        return None
-
-    sys.path.insert(0, str(KIT_DASHBOARD_AGENT_DIR / "src"))
-    from merchant_data.models import KitCredentials
-    from merchant_data.services.kit_merchant_lookup import MerchantLookupService
-
-    credentials = KitCredentials(
-        email=settings.kit_dashboard_email,
-        password=settings.kit_dashboard_password,
-        base_url=settings.kit_dashboard_url,
-        storage_state=PROJECT_ROOT / settings.kit_dashboard_storage_state,
-        verification_code=verification_code,
-    )
-    service = MerchantLookupService(
-        credentials,
-        headless=not headed,
-        debug_dir=PROJECT_ROOT / "tmp" / "kit-dashboard-debug",
-    )
-    print(f"Resolving VAR from Kit Dashboard for Merchant Number {merchant_number}...", flush=True)
-    result = await asyncio.wait_for(service.download_var_by_id(merchant_number, save_dir), timeout=120)
-    return result.saved_path
-
-
 def download_var_from_email(merchant_number: str, *, settings: Settings) -> Path | None:
+    """Last-resort fallback: search IMAP inbox for a VAR PDF by merchant number."""
     if (
         settings.mail_provider != "imap"
         or not settings.mail_imap_host
@@ -746,49 +713,21 @@ def get_var_data_from_kit_api(
     return rows[0]
 
 
-async def resolve_var_pdf(args: argparse.Namespace, settings: Settings) -> Path:
-    if args.pdf:
-        return args.pdf
-    if not args.merchant_number:
-        raise RuntimeError("--merchant-number is required when --pdf is not provided")
-
-    sources = ["kit-dashboard", "email"] if args.var_source == "auto" else [args.var_source]
-    last_errors: list[str] = []
-    for source in sources:
-        try:
-            if source == "kit-dashboard":
-                path = await download_var_from_kit_dashboard(
-                    args.merchant_number,
-                    settings=settings,
-                    save_dir=args.var_download_dir,
-                    headed=args.headed,
-                    verification_code=args.kit_verification_code,
-                )
-            elif source == "email":
-                path = download_var_from_email(args.merchant_number, settings=settings)
-            else:
-                path = None
-            if path:
-                print(f"VAR PDF resolved from {source}: {path}")
-                return path
-        except TimeoutError:
-            last_errors.append(
-                f"{source}: timed out while resolving VAR PDF. If KIT Dashboard requested 2FA, rerun with --kit-verification-code."
-            )
-        except Exception as exc:
-            last_errors.append(f"{source}: {exc}")
-
-    details = "; ".join(last_errors) if last_errors else "no configured source returned a PDF"
-    raise RuntimeError(f"Could not resolve VAR PDF for Merchant Number {args.merchant_number}: {details}")
-
-
 async def resolve_provisioning_data(
     args: argparse.Namespace,
     settings: Settings,
     *,
     primary_serial: str,
 ) -> tuple[PaxProvisioningData, str, Path | None]:
+    """
+    Resolve VAR data in priority order:
+      1. PDF provided directly via --pdf
+      2. KIT Dashboard API (primary, no browser needed)
+      3. Email inbox (last resort, requires IMAP config)
+    """
     merchant_number_override = args.merchant_number_override or args.merchant_number
+
+    # Priority 1: PDF provided directly
     if args.pdf:
         pdf_path = args.pdf
         return (
@@ -800,38 +739,37 @@ async def resolve_provisioning_data(
     if not args.merchant_number:
         raise RuntimeError("--merchant-number is required when --pdf is not provided")
 
-    sources = ["kit-api", "kit-dashboard", "email"] if args.var_source == "auto" else [args.var_source]
-    last_errors: list[str] = []
-    for source in sources:
-        try:
-            if source == "kit-api":
-                var_data = get_var_data_from_kit_api(
-                    args.merchant_number,
-                    settings=settings,
-                    v_number=args.var_v_number,
-                    terminal_number=args.var_terminal_number,
-                )
-                if var_data:
-                    print(f"VAR data resolved from KIT API for Merchant Number {args.merchant_number}")
-                    return (
-                        PaxProvisioningData.from_api_var(var_data, primary_serial, merchant_number_override),
-                        f"kit-api:{args.merchant_number}",
-                        None,
-                    )
-            elif source in {"kit-dashboard", "email"}:
-                args_for_pdf = argparse.Namespace(**vars(args))
-                args_for_pdf.var_source = source
-                pdf_path = await resolve_var_pdf(args_for_pdf, settings)
-                return (
-                    PaxProvisioningData.from_pdf(pdf_path, primary_serial, merchant_number_override),
-                    str(pdf_path),
-                    pdf_path,
-                )
-        except Exception as exc:
-            last_errors.append(f"{source}: {exc}")
+    # Priority 2: KIT Dashboard API
+    if args.var_source in {"auto", "kit-api"}:
+        var_data = get_var_data_from_kit_api(
+            args.merchant_number,
+            settings=settings,
+            v_number=args.var_v_number,
+            terminal_number=args.var_terminal_number,
+        )
+        if var_data:
+            print(f"VAR data resolved from KIT API for Merchant Number {args.merchant_number}")
+            return (
+                PaxProvisioningData.from_api_var(var_data, primary_serial, merchant_number_override),
+                f"kit-api:{args.merchant_number}",
+                None,
+            )
 
-    details = "; ".join(last_errors) if last_errors else "no configured source returned VAR data"
-    raise RuntimeError(f"Could not resolve VAR data for Merchant Number {args.merchant_number}: {details}")
+    # Priority 3: Email inbox (last resort)
+    if args.var_source in {"auto", "email"}:
+        pdf_path = download_var_from_email(args.merchant_number, settings=settings)
+        if pdf_path:
+            print(f"VAR PDF resolved from email: {pdf_path}")
+            return (
+                PaxProvisioningData.from_pdf(pdf_path, primary_serial, merchant_number_override),
+                str(pdf_path),
+                pdf_path,
+            )
+
+    raise RuntimeError(
+        f"Could not resolve VAR data for Merchant Number {args.merchant_number}. "
+        "Provide --pdf, configure KIT_API_KEY, or set up email inbox as fallback."
+    )
 
 
 async def provision_single_terminal(
@@ -1069,11 +1007,10 @@ async def main() -> None:
         help="Do not install KIT Back Screen on the PIN pad.",
     )
     parser.set_defaults(pinpad_back_screen=None)
-    parser.add_argument("--var-source", choices=["auto", "kit-api", "kit-dashboard", "email"], default="auto")
-    parser.add_argument("--var-v-number", help="Select a specific KIT API VAR row by V Number, for example V6615476.")
+    parser.add_argument("--var-source", choices=["auto", "kit-api", "email"], default="auto",
+                        help="VAR data source. auto = kit-api first, then email fallback.")
+    parser.add_argument("--var-v-number", help="Select a specific KIT API VAR row by V Number, e.g. V6615476.")
     parser.add_argument("--var-terminal-number", help="Select a specific KIT API VAR row by TSYS Terminal Number.")
-    parser.add_argument("--var-download-dir", type=Path, default=DEFAULT_VAR_DOWNLOAD_DIR)
-    parser.add_argument("--kit-verification-code", help="KIT Dashboard 2FA code when the session requires verification.")
     parser.add_argument(
         "--merchant-number-override",
         help="Optional override for the VAR Merchant Number. Normally this is read from the PDF.",
