@@ -235,6 +235,52 @@ class MerchantAPIService:
         data = self._get(f"/merchant/{internal_id}", {})
         return self._parse(data)
 
+    # -------------------------------------------------------- VAR sheet (API) --
+
+    def var_json_by_terminal_id(self, terminal_id: int | str) -> dict:
+        """Return full VAR data as JSON for a single terminal.
+
+        Uses GET /terminal/<id>/var-list — works with Bearer token, no login needed.
+        Returns fields: chain, bin, merchantNumber, tid, backendProcessorId,
+        equipment, mcc, address, acceptVisa/MC/Discover/Amex/PinDebit/Ebt, etc.
+        """
+        return self._get(f"/terminal/{terminal_id}/var-list", {})
+
+    def var_pdf_by_terminal_id(self, terminal_id: int | str, save_dir: Path) -> Path:
+        """Download VAR PDF for a terminal via GET /terminal/<id>/var-download.
+
+        Works with Bearer token, no session cookie needed.
+        Returns the path to the saved PDF file.
+        """
+        import urllib.error
+        save_dir = Path(save_dir)
+        save_dir.mkdir(parents=True, exist_ok=True)
+        url = f"{_BASE}/terminal/{terminal_id}/var-download"
+        req = urllib.request.Request(url, headers={
+            "Authorization": f"Bearer {self.api_key}",
+            "Accept": "application/pdf,*/*",
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
+            "Referer": "https://kitdashboard.com/",
+            "Origin": "https://kitdashboard.com",
+        })
+        try:
+            with urllib.request.urlopen(req, timeout=30, context=_SSL) as resp:
+                data = resp.read()
+                # Extract filename from Content-Disposition header if present
+                cd = resp.headers.get("Content-Disposition", "")
+                fname_m = __import__("re").search(r'filename="([^"]+)"', cd)
+                fname = fname_m.group(1) if fname_m else f"terminal-{terminal_id}-VAR-Sheet.pdf"
+                dest = save_dir / fname
+                dest.write_bytes(data)
+                return dest
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode()
+            raise RuntimeError(f"var-download {exc.code}: {body}") from exc
+
     # --------------------------------------------------------------- internals
 
     def _get(self, path: str, params: dict) -> dict:
