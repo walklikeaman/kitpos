@@ -9,14 +9,24 @@
 ## Что делает этот пакет
 
 Извлекает данные мерчантов KIT POS (имя, адрес, телефон, MCC, терминалы, VAR-данные)
-через Maverick Payments REST API. **Браузер не нужен** для большинства операций.
+через Maverick Payments REST API. **Браузер не нужен.** Сессия не нужна для VAR.
+
+### Приоритет получения VAR-данных (от лучшего к худшему)
+
+```
+1. GET /terminal/{id}/var-list   ← PRIMARY: JSON, Bearer только, BIN возвращается напрямую
+2. GET /terminal/{id}/var-download ← PDF через API, Bearer только, без сессии
+3. Вручную предоставленный PDF   ← если пользователь прислал файл
+4. UI-сессия (VarDownloader)     ← устаревший метод, только если всё выше не сработало
+```
+
+> ✅ Gmail проверять **не нужно**. Эндпоинт `var-list` всегда доступен через Bearer токен.
 
 Работа с данными:
-- **`api-var-by-mid` / `api-var-by-name`** — полные VAR-данные (все поля VAR-листа)
-  из API без браузера, без сессии, без PDF
+- **`api-var-by-mid` / `api-var-by-name`** — полные VAR-данные из API, без сессии, без PDF
 - **`api-by-mid` / `api-by-name` / `api-by-internal-id`** — базовые данные мерчанта
-- **`get-var-by-mid` / `get-var-by-merchant-name`** — скачать VAR как PDF-файл
-  (нужна сессия kitdashboard.com)
+- **`get-var-by-mid` / `get-var-by-merchant-name`** — скачать VAR PDF через API (Bearer, без сессии)
+- **`upload-logo` / `remove-logo`** — загрузить/удалить лого мерчанта (нужна сессия)
 
 ---
 
@@ -43,28 +53,37 @@ KIT_API_KEY=kjQ0.nAcSa5fkt85ytxm4FJn4ZyY0KL6XHPhS
 
 ## CLI команды
 
-### Основные (API, мгновенно, без браузера)
+### VAR-данные (API, мгновенно, только Bearer — сессия не нужна)
 
 ```bash
-# VAR-данные по MID (рекомендуется)
+# ✅ РЕКОМЕНДУЕТСЯ: VAR JSON по MID (BIN возвращается напрямую из API)
 merchant api-var-by-mid 201100300996
 merchant api-var-by-mid 201100300996 --json
 
-# VAR-данные по имени мерчанта
+# VAR JSON по имени мерчанта
 merchant api-var-by-name "El Camino"
 merchant api-var-by-name "El Camino" --json
 
-# Базовые данные мерчанта
+# Скачать VAR PDF через API (Bearer, без сессии)
+merchant get-var-by-mid 201100300996 --save-dir ./downloads
+merchant get-var-by-merchant-name "El Camino" --save-dir ./downloads
+```
+
+### Базовые данные мерчанта
+
+```bash
 merchant api-by-mid 201100300996
 merchant api-by-name "El Camino"
 merchant api-by-internal-id 299390
 ```
 
-### Скачать VAR PDF (нужна сессия)
+### Лого мерчанта (нужна сессия kitdashboard.com)
 
 ```bash
-merchant get-var-by-mid 201100300996 --save-dir ./downloads
-merchant get-var-by-merchant-name "El Camino" --save-dir ./downloads
+merchant upload-logo logo.png --name "Snack Zone"
+merchant upload-logo logo.png --mid 201100306415
+merchant upload-logo logo.png --internal-id 303608
+merchant remove-logo --name "Snack Zone"
 ```
 
 ---
@@ -73,14 +92,19 @@ merchant get-var-by-merchant-name "El Camino" --save-dir ./downloads
 
 ```
 src/merchant_data/
-  models.py              — VarData, MerchantResult, KitCredentials, VarDownloadResult
-                           + _CHAIN_TO_BIN (таблица Chain → BIN)
-                           + _STATE_CODES  (код штата → название)
+  models.py                — VarData, MerchantResult, KitCredentials, VarDownloadResult
+                             + _CHAIN_TO_BIN (Chain → BIN, fallback если API недоступен)
+                             + _STATE_CODES  (код штата → название)
+                             + validate_state_from_zip()
   services/
-    kit_api.py           — MerchantAPIService: все API-запросы
-    kit_var_downloader.py— VarDownloader: HTTP-логин + PDF скачивание
-    kit_merchant_lookup.py — MerchantLookupService: Playwright (legacy)
-  cli.py                 — typer CLI
+    kit_api.py             — MerchantAPIService: все REST API запросы
+                             + var_json_by_terminal_id()   ← PRIMARY VAR метод
+                             + var_pdf_by_terminal_id()    ← PDF через API (Bearer)
+                             + var_data_by_mid/name()      ← используют var-list внутри
+    kit_branding.py        — MerchantBrandingService: upload/remove logo (UI-сессия)
+    kit_var_downloader.py  — VarDownloader: HTTP-логин + PDF (устаревший fallback)
+    kit_merchant_lookup.py — MerchantLookupService: Playwright (legacy, не использовать)
+  cli.py                   — typer CLI
 ```
 
 ### Два базовых URL (оба работают)
@@ -104,6 +128,13 @@ src/merchant_data/
 - `GET /merchant?per-page=50&page=N` — пагинация всех мерчантов (для поиска по MID)
 - `GET /terminal?filter[merchant.id][eq]={id}` — терминалы мерчанта
 
+**VAR — прямые эндпоинты (Bearer, без сессии):**
+- `GET /terminal/{terminal_id}/var-list` — ✅ **PRIMARY**: все VAR поля как JSON, включая BIN
+- `GET /terminal/{terminal_id}/var-download` — PDF файл напрямую (Bearer, без сессии)
+
+> ⚠️ `terminal_id` — это **внутренний API id** (например `812330`), НЕ TID (7000) и НЕ V-номер.
+> Получить: `GET /terminal?filter[merchant.id][eq]={merchant_internal_id}` → `items[0].id`
+
 **DBA (kitdashboard.com/api) — только чтение:**
 - `GET /dba` — список всех DBA
 - `GET /dba/{id}` — один DBA по id
@@ -116,33 +147,70 @@ src/merchant_data/
 
 ## VAR-данные: как устроены
 
-VAR-лист (TSYS VAR/Download Sheet) содержит:
+### Источник данных — `/terminal/{id}/var-list` (PRIMARY)
 
-| Поле | Источник в API | Примечание |
+Эндпоинт возвращает все поля VAR-листа напрямую. **BIN возвращается как поле**, не нужно вычислять из chain.
+
+Пример ответа:
+```json
+{
+  "id": 812330,
+  "tid": 7000,
+  "backendProcessorId": "V6592346",
+  "merchantNumber": 201100306415,
+  "chain": "081960",
+  "agentBank": "081960",
+  "bin": "422108",
+  "mcc": 5411,
+  "storeNumber": "0001",
+  "locationNumber": "00001",
+  "approvedMonthlyVolume": "$50,000.00",
+  "address": {
+    "streetAddress": "604 Red Hill Ave",
+    "city": "San Anselmo",
+    "state": "California",
+    "zip": "94960"
+  },
+  "customerServicePhone": "+1 510-640-2004",
+  "acceptVisa": "Yes",
+  "acceptMastercard": "Yes",
+  "acceptDiscover": "Yes",
+  "acceptAmericanExpress": "Yes",
+  "acceptPinDebit": "Yes",
+  "acceptEbt": "Yes",
+  "acceptGiftCard": "No",
+  "dba": { "id": 345680, "name": "Snack Zone" },
+  "merchant": { "id": 303608, "name": "Snack Zone Inc" }
+}
+```
+
+### Маппинг полей VAR-листа (TSYS)
+
+| Поле VAR-листа | Источник в var-list | Примечание |
 |---|---|---|
 | Legal Name | `merchant.name` | |
-| DBA | `merchant.dbas[0].name` | |
-| Street / City / ZIP | `merchant.dbas[0].address` | |
-| State | `merchant.dbas[0].address.state` | Код → название через `_STATE_CODES` |
-| Phone | `merchant.dbas[0].customerServiceContact.phone` | |
-| Merchant # (MID) | `merchant.dbas[0].processing.mid` | |
-| V Number | `terminal.backendProcessorId` | |
-| MCC | `merchant.dbas[0].mcc` | |
-| Chain | `terminal.chain` | |
-| Agent Bank | `terminal.agentBank` | |
-| Store # | `terminal.storeNumber` | |
-| Terminal # | `terminal.tid` | |
-| Location # | `terminal.locationNumber` | |
-| Monthly Volume | `processing.volumes.monthlyTransactionAmount` | |
-| Card types | `terminal.acceptVisa/MC/Amex/...` | |
-| **BIN** | **вычисляется из `terminal.chain`** | См. таблицу ниже |
+| DBA | `dba.name` | |
+| Street / City / ZIP | `address.streetAddress/city/zip` | |
+| State | `address.state` | Уже строка ("California"), не код |
+| Phone | `customerServicePhone` | |
+| Merchant # (MID) | `merchantNumber` | |
+| V Number | `backendProcessorId` | |
+| MCC | `mcc` | |
+| Chain | `chain` | |
+| Agent Bank | `agentBank` | |
+| Store # | `storeNumber` | |
+| Terminal # | `tid` | |
+| Location # | `locationNumber` | |
+| Monthly Volume | `approvedMonthlyVolume` | |
+| Card types | `acceptVisa/Mastercard/Amex/...` | |
+| **BIN** | **`bin`** | ✅ Возвращается напрямую, не вычисляется |
 
 ---
 
-## Таблица Chain → BIN (критически важно)
+## Таблица Chain → BIN (fallback, не используется если есть var-list)
 
-BIN (Bank Identification Number) в VAR не хранится в API.
-Он **однозначно определяется** значением `terminal.chain`:
+> ✅ **BIN теперь возвращается напрямую** из `GET /terminal/{id}/var-list` в поле `bin`.
+> Таблица ниже нужна **только** если var-list недоступен (исторический fallback).
 
 ```python
 _CHAIN_TO_BIN = {
@@ -154,7 +222,11 @@ _CHAIN_TO_BIN = {
 
 Таблица выведена из анализа 11+ реальных VAR-листов (май 2026).
 
-### ⚠️ Если встретился неизвестный Chain — полный автоматический протокол
+### ⚠️ Если встретился неизвестный Chain
+
+> Примечание: при использовании `api-var-by-mid` / `api-var-by-name` (PRIMARY метод через var-list),
+> BIN берётся напрямую из API и проблема Unknown Chain **не возникает**.
+> Протокол ниже актуален только при ручном использовании устаревшего пути.
 
 CLI вернёт exit code **2** и JSON в stderr:
 ```json
@@ -166,56 +238,40 @@ CLI вернёт exit code **2** и JSON в stderr:
 }
 ```
 
-Агент **обязан** выполнить следующие шаги **по порядку**, переходя
-к следующему только если предыдущий не дал результата:
+Агент **обязан** выполнить следующие шаги **по порядку**:
 
 ---
 
-#### Шаг 1: Попробовать скачать VAR PDF через VarDownloader
+#### Шаг 1: Запросить var-list через API (PRIMARY)
 
 ```bash
+merchant api-var-by-mid {MID}
+# или
+merchant api-var-by-name "{merchant_name}"
+```
+
+BIN возвращается напрямую в поле `bin`. Если команда вернула данные → задача решена, перейти к **Шагу 3** чтобы обновить таблицу.
+
+---
+
+#### Шаг 2: Если var-list недоступен — скачать VAR PDF через API
+
+```bash
+merchant get-var-by-mid {MID} --save-dir ./tmp/var_learn
+# или
 merchant get-var-by-merchant-name "{merchant_name}" --save-dir ./tmp/var_learn
 ```
 
-Если PDF скачан → перейти к **Шагу 4**.
-
----
-
-#### Шаг 2: Поискать уведомление в Gmail
-
-Использовать Gmail MCP (`search_threads`) с запросом:
-```
-from:no-reply@kitdashboard.com subject:"VAR available" "{merchant_name}"
-```
-или по MID если известен:
-```
-from:no-reply@kitdashboard.com subject:"VAR available" "{MID}"
-```
-
-Если письмо найдено — VAR есть на kitdashboard, но VarDownloader не смог
-его получить. Попробовать снова с явным логином:
-```bash
-merchant get-var-by-merchant-name "{merchant_name}" --verification-code {если нужно}
-```
-
-Если PDF получен → перейти к **Шагу 4**.
-
----
-
-#### Шаг 3: Диалог с пользователем
-
-Если ни VarDownloader, ни Gmail не дали результата:
+Если ни var-list, ни var-download не дали результата — запросить PDF у пользователя:
 
 > "Встречен новый Chain: `{chain}` для мерчанта `{merchant_name}`.
-> BIN для него неизвестен и не удалось найти VAR автоматически.
-> Пожалуйста, пришли VAR-лист (PDF-файл или текст) для этого мерчанта
+> BIN для него неизвестен и не удалось получить VAR автоматически.
+> Пожалуйста, пришли VAR-лист (PDF-файл) для этого мерчанта
 > или любого другого с Chain `{chain}`."
-
-Дождаться ответа, взять файл/текст и перейти к **Шагу 4**.
 
 ---
 
-#### Шаг 4: Извлечь BIN из VAR PDF и обновить таблицу
+#### Шаг 3: Извлечь BIN и обновить таблицу
 
 ```python
 from pdfminer.high_level import extract_text
@@ -239,21 +295,12 @@ git push origin main
 
 ---
 
-#### Шаг 5: Повторить исходную команду
+## Сессия kitdashboard.com (только для лого — VAR сессия не требует)
 
-```bash
-merchant api-var-by-mid {MID}
-# или
-merchant api-var-by-name "{merchant_name}"
-```
-
-Теперь BIN будет вычислен корректно.
-
----
-
-## Сессия kitdashboard.com (только для PDF-скачивания)
-
-Для `get-var-by-mid` / `get-var-by-merchant-name` нужна сессия.
+> ✅ **VAR больше не требует сессии.** `get-var-by-mid` / `get-var-by-merchant-name` и
+> `api-var-by-mid` / `api-var-by-name` работают через Bearer токен.
+>
+> Сессия нужна **только** для команд `upload-logo` / `remove-logo`.
 
 **Как получить сессию (первый раз / истекла):**
 
@@ -297,24 +344,19 @@ https://kitdashboard.com/merchant/profile/view-var-sheet?id={merchantAccountId}&
 
 ## Gmail коннектор
 
+> ✅ **Gmail для VAR больше не нужен.** VAR-данные получаются напрямую через
+> `GET /terminal/{id}/var-list` (Bearer токен, без проверки почты).
+
 Доступен MCP с инструментами `search_threads` и `get_thread`.
 
-**Уведомления о VAR-листах** приходят от `no-reply@kitdashboard.com`
-с темой `"VAR available"` и содержат MID и DBA в теле письма.
-Они **не содержат PDF-вложение** — только уведомление что VAR загружен.
-
-Полезные запросы:
+Единственный оставшийся сценарий для Gmail — **2FA код при первом логине**
+(нужен только для `upload-logo` / `remove-logo`):
 ```
-# Найти VAR для конкретного мерчанта
-from:no-reply@kitdashboard.com subject:"VAR available" "El Camino"
-from:no-reply@kitdashboard.com subject:"VAR available" "201100300996"
-
-# Все VAR-уведомления
-from:no-reply@kitdashboard.com subject:"VAR available"
-
-# 2FA коды (если нужен код для логина)
+# 2FA коды для логина в kitdashboard.com
 from:no-reply@kitdashboard.com subject:"verification" newer_than:5m
 ```
+
+Исторически через Gmail искали уведомления о VAR-листах. **Больше не требуется.**
 
 ---
 
@@ -390,10 +432,11 @@ merchant.dbas[0].customerServiceContact.email
 
 ## Обучение на новых данных: правила
 
-Каждый раз когда агент обрабатывает новый VAR-лист (PDF или текст),
+Каждый раз когда агент обрабатывает новый VAR-лист (из API или PDF),
 он должен проверить:
 
-1. **Chain уже в таблице?** Если нет — добавить и закоммитить (см. выше).
+1. **Chain уже в таблице?** BIN теперь приходит из `var-list` напрямую, но если встречен
+   новый Chain при использовании fallback — добавить в `_CHAIN_TO_BIN` и закоммитить (см. выше).
 
 2. **State code корректен?** `_STATE_CODES` покрывает 50 штатов + DC.
    Если встретился неизвестный код — спросить пользователя и добавить.
@@ -555,3 +598,4 @@ print(RunLogger().summary())
 | 2026-05-05 | Уточнены URL: DBA API → kitdashboard.com/api; лого → kitdashboard.com/merchant/profile/ (UI-сессия) |
 | 2026-05-05 | Карта email-полей: corporateContact.email и principals.email только в Boarding App, не в DBA API |
 | 2026-05-05 | MerchantBrandingService: upload-logo / remove-logo команды (multipart POST через UI-сессию) |
+| 2026-05-05 | VAR API refactor: `/terminal/{id}/var-list` — PRIMARY метод (BIN напрямую из JSON); Gmail проверка убрана; сессия нужна только для лого; VarDownloader — legacy fallback |
