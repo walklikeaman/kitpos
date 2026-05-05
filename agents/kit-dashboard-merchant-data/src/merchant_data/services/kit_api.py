@@ -33,7 +33,7 @@ def _ssl_ctx() -> ssl.SSLContext:
 
 _SSL = _ssl_ctx()
 
-from merchant_data.models import MerchantResult, VarData, _CHAIN_TO_BIN, _STATE_CODES
+from merchant_data.models import MerchantResult, VarData, _CHAIN_TO_BIN, _STATE_CODES, validate_state_from_zip
 
 
 class UnknownChainError(Exception):
@@ -134,6 +134,12 @@ class MerchantAPIService:
         state_raw = addr.get("state", [])
         state_code = state_raw[0] if isinstance(state_raw, list) and state_raw else state_raw
         state_name = _STATE_CODES.get(state_code, str(state_code))
+        # Validate state vs zip code
+        zip_code = addr.get("zip", "")
+        state_warning = validate_state_from_zip(zip_code, state_name)
+        if state_warning:
+            import warnings
+            warnings.warn(f"Address mismatch for merchant {merchant_id}: {state_warning}")
 
         # Fetch all terminals for this merchant
         terminals_data = self._get(
@@ -245,10 +251,20 @@ class MerchantAPIService:
 
         # Business address
         addr = dba.get("address", {})
+        state_raw = addr.get("state", [])
+        state_code = state_raw[0] if isinstance(state_raw, list) and state_raw else state_raw
+        state_name = _STATE_CODES.get(state_code, "") if state_code else ""
+        zip_code = addr.get("zip", "")
+        # Validate state vs zip
+        state_warning = validate_state_from_zip(zip_code, state_name)
+        if state_warning:
+            import warnings
+            warnings.warn(f"Address mismatch for merchant {internal_id}: {state_warning}")
         address_parts = [
             addr.get("street", ""),
             addr.get("city", ""),
-            addr.get("zip", ""),
+            state_name,
+            zip_code,
         ]
         business_address = ", ".join(p for p in address_parts if p)
 
