@@ -83,14 +83,31 @@ src/merchant_data/
   cli.py                 — typer CLI
 ```
 
-**API base URL:** `https://dashboard.maverickpayments.com/api`
-**Auth:** `Authorization: Bearer {KIT_API_KEY}`
+### Два базовых URL (оба работают)
 
-Ключевые эндпоинты:
+| URL | Используется для |
+|---|---|
+| `https://dashboard.maverickpayments.com/api` | Merchant, Terminal, Boarding Application, Attachments — **используем этот** |
+| `https://kitdashboard.com/api` | DBA (документация указывает этот URL для DBA) |
+| `https://kitdashboard.com/merchant/profile/...` | UI-контроллер для лого и VAR PDF (требует сессию, не Bearer) |
+
+**Auth (REST API):** `Authorization: Bearer {KIT_API_KEY}`
+**Auth (UI-контроллер):** сессионный cookie (см. VarDownloader / MerchantBrandingService)
+
+**Sandbox:** `https://sandbox.kitdashboard.com/api` (отдельный API-ключ)
+
+### Ключевые эндпоинты
+
+**Merchant (dashboard.maverickpayments.com/api):**
 - `GET /merchant?filter[name][like]=X` — поиск по имени
 - `GET /merchant/{id}` — по internal id
 - `GET /merchant?per-page=50&page=N` — пагинация всех мерчантов (для поиска по MID)
 - `GET /terminal?filter[merchant.id][eq]={id}` — терминалы мерчанта
+
+**DBA (kitdashboard.com/api) — только чтение:**
+- `GET /dba` — список всех DBA
+- `GET /dba/{id}` — один DBA по id
+- ⚠️ Нет PUT/POST/PATCH — DBA **read-only** через API
 
 > ⚠️ `filter[dbas.processing.mid]` в API **сломан** (возвращает 422).
 > Для поиска по MID — пагинировать всех мерчантов (~13 страниц по 50) и искать локально.
@@ -333,17 +350,26 @@ Maverick API возвращает штат как целое число (`addres
 
 ---
 
-## Email мерчанта: двухуровневый поиск
+## Email мерчанта: где какие поля существуют
 
-### Уровень 1: Merchant API
+### Карта email-полей по объектам API
 
-Единственное поле с email в Merchant API:
+| Поле | Объект | Readonly | Примечание |
+|---|---|---|---|
+| `customerServiceContact.email` | **DBA** (активный мерчант) | Yes | Единственный email в DBA API |
+| `customerServiceContact.email` | Boarding Application | No | То же поле, заполняется при онбординге |
+| `corporateContact.email` | **только** Boarding Application | No | Отсутствует в DBA API |
+| `principals[N].email` | **только** Boarding Application | No | Отсутствует в DBA API |
+
+> ⚠️ `corporateContact` и `principals.email` — **нет в DBA/Merchant API**, только в Boarding Application.
+> Не пытаться искать их в ответе `GET /merchant` или `GET /dba`.
+
+### Уровень 1: DBA / Merchant API
+
 ```
 merchant.dbas[0].customerServiceContact.email
 ```
 Это "Support Email" в дашборде. Часто не заполнен.
-
-> ⚠️ На principals в Merchant API email **нет**. Не искать там.
 
 ### Уровень 2: Boarding Application (fallback)
 
@@ -526,3 +552,6 @@ print(RunLogger().summary())
 | 2026-05-05 | Email fallback: если нет в Merchant API → ищем в boarding-application (3 поля) |
 | 2026-05-05 | `_parse()`: в адрес добавлен штат (раньше отсутствовал) |
 | 2026-05-05 | Skill `kit-merchant-lookup` создан для Claude Code |
+| 2026-05-05 | Уточнены URL: DBA API → kitdashboard.com/api; лого → kitdashboard.com/merchant/profile/ (UI-сессия) |
+| 2026-05-05 | Карта email-полей: corporateContact.email и principals.email только в Boarding App, не в DBA API |
+| 2026-05-05 | MerchantBrandingService: upload-logo / remove-logo команды (multipart POST через UI-сессию) |
