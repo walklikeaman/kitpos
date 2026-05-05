@@ -92,6 +92,26 @@ class MerchantAPIService:
             page += 1
         raise RuntimeError(f"No merchant found with MID: {mid}")
 
+    def _email_from_boarding(self, merchant_name: str) -> str:
+        """Fallback: find principal email from boarding application by company name."""
+        try:
+            data = self._get(
+                "/boarding-application",
+                {"filter[company.name][like]": merchant_name, "per-page": 5},
+            )
+            for app in data.get("items", []):
+                app_id = app.get("id")
+                if not app_id:
+                    continue
+                full = self._get(f"/boarding-application/{app_id}", {})
+                for principal in full.get("principals", []):
+                    email = principal.get("email", "")
+                    if email:
+                        return email
+        except Exception:
+            pass
+        return ""
+
     def var_data_by_name(self, name: str) -> list[VarData]:
         """Return VAR data for all terminals of the first merchant matching name."""
         params = {"filter[name][like]": name, "per-page": 5}
@@ -221,8 +241,7 @@ class MerchantAPIService:
             body = exc.read().decode()
             raise RuntimeError(f"API error {exc.code}: {body}") from exc
 
-    @staticmethod
-    def _parse(item: dict) -> MerchantResult:
+    def _parse(self, item: dict) -> MerchantResult:
         merchant_name = item.get("name", "")
         internal_id = item.get("id", "")
         profile_url = (
@@ -243,7 +262,10 @@ class MerchantAPIService:
         dba = dbas[0] if dbas else {}
         contact = dba.get("customerServiceContact", {})
         phone = contact.get("phone", "")
-        email = contact.get("email", "")
+        email = contact.get("email", "") or ""
+        # Fallback: if no contact email, look in boarding application principal
+        if not email:
+            email = self._email_from_boarding(merchant_name)
 
         # MID
         proc = dba.get("processing", {})
