@@ -93,3 +93,18 @@ Thumbs.db
 # Git
 .git/
 .gitkeep
+
+# Claude IDE internals
+.claude/
+
+# Context folder (sensitive merchant documents — PDFs, IDs, checks)
+Context/
+
+# KIT Dashboard Merchant Data agent runtime
+agents/kit-dashboard-merchant-data/tmp/
+agents/kit-dashboard-merchant-data/logs/
+agents/kit-dashboard-merchant-data/debug/
+agents/kit-dashboard-merchant-data/runs/
+agents/kit-dashboard-merchant-data/downloads/
+agents/kit-dashboard-merchant-data/.env.local
+agents/kit-dashboard-merchant-data/.claude/
