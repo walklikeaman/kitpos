@@ -1,0 +1,20 @@
+name: Update N8N (weekly)
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'  # Every Monday at 3:00 UTC
+  workflow_dispatch:       # Also allows manual trigger from GitHub UI
+
+jobs:
+  redeploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render redeploy (pulls latest n8n image)
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}")
+          echo "Render deploy hook response: $STATUS"
+          if [ "$STATUS" != "200" ] && [ "$STATUS" != "201" ]; then
+            echo "Deploy hook failed with status $STATUS"
+            exit 1
+          fi
+          echo "Redeploy triggered successfully"
