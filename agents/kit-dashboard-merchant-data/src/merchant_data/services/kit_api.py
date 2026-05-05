@@ -93,7 +93,13 @@ class MerchantAPIService:
         raise RuntimeError(f"No merchant found with MID: {mid}")
 
     def _email_from_boarding(self, merchant_name: str) -> str:
-        """Fallback: find principal email from boarding application by company name."""
+        """Fallback: find any email from boarding application when merchant API has none.
+
+        Boarding app has three possible email locations — checked in priority order:
+          1. customerServiceContact.email  (shown as "Support Email" in dashboard)
+          2. corporateContact.email
+          3. principals[N].email           (principal's personal email)
+        """
         try:
             data = self._get(
                 "/boarding-application",
@@ -104,6 +110,18 @@ class MerchantAPIService:
                 if not app_id:
                     continue
                 full = self._get(f"/boarding-application/{app_id}", {})
+
+                # 1. customerServiceContact.email
+                email = (full.get("customerServiceContact") or {}).get("email", "")
+                if email:
+                    return email
+
+                # 2. corporateContact.email
+                email = (full.get("corporateContact") or {}).get("email", "")
+                if email:
+                    return email
+
+                # 3. principals[N].email
                 for principal in full.get("principals", []):
                     email = principal.get("email", "")
                     if email:
