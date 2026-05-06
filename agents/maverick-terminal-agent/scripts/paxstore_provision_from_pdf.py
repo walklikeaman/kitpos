@@ -1051,8 +1051,14 @@ async def main() -> None:
         print(json.dumps(plan_summary, indent=2, ensure_ascii=True))
         return
 
-    username = os.environ.get("PAX_USERNAME") or input("PAX username: ").strip()
-    password = os.environ.get("PAX_PASSWORD") or getpass("PAX password: ")
+    # Credentials come exclusively from .env — no interactive prompts in headless mode
+    username = os.environ.get("PAX_USERNAME", "")
+    password = os.environ.get("PAX_PASSWORD", "")
+    if not username or not password:
+        raise RuntimeError(
+            "PAX_USERNAME and PAX_PASSWORD must be set in .env. "
+            "No interactive login in headless/server mode."
+        )
 
     SESSION_FILE = PROJECT_ROOT / "tmp" / "paxstore_session.json"
 
