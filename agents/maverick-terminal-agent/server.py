@@ -67,13 +67,46 @@ class JobStatus(BaseModel):
     finished_at: str | None = None
     result: dict | None = None
     error: str | None = None
+    steps: list[str] = []   # real-time progress steps parsed from stdout
 
 
 # ── Background provisioning task ─────────────────────────────────────────────
 
+# Progress keywords to watch in stdout → human-readable step labels
+_PROGRESS_PATTERNS: list[tuple[str, str]] = [
+    ("VAR data resolved",          "✅ VAR данные получены"),
+    ("Logging in",                  "🔐 Логин в PAX Store..."),
+    ("Logged in",                   "✅ Логин выполнен"),
+    ("merchant already exists",     "✅ Мерчант найден"),
+    ("merchant created",            "✅ Мерчант создан"),
+    ("Creating merchant",           "⚙️ Создаю мерчанта..."),
+    ("terminal already exists",     "✅ Терминал найден"),
+    ("terminal created",            "✅ Терминал создан"),
+    ("Creating terminal",           "⚙️ Создаю терминал..."),
+    ("Pushing firmware",            "📦 Загружаю прошивку..."),
+    ("Firmware pushed",             "✅ Прошивка загружена"),
+    ("Pushing template",            "📋 Устанавливаю template..."),
+    ("Template pushed",             "✅ Template установлен"),
+    ("Filling TSYS",                "📝 Заполняю TSYS параметры..."),
+    ("TSYS filled",                 "✅ TSYS параметры заполнены"),
+    ("Submitting",                  "🚀 Отправляю задачи..."),
+    ("All tasks submitted",         "✅ Все задачи отправлены"),
+    ("Provisioning complete",       "🎉 Провижонирование завершено"),
+]
+
+
+def _parse_step(line: str) -> str | None:
+    """Return a human-readable step label if the line matches a known pattern."""
+    for keyword, label in _PROGRESS_PATTERNS:
+        if keyword.lower() in line.lower():
+            return label
+    return None
+
+
 async def _run_provisioning(job_id: str, req: ProvisionRequest) -> None:
-    """Run the provisioning script as a subprocess and track the result."""
+    """Run the provisioning script as a subprocess, stream stdout for progress."""
     _jobs[job_id]["status"] = "running"
+    _jobs[job_id]["steps"] = []
 
     script = Path(__file__).parent / "scripts" / "paxstore_provision_from_pdf.py"
 
@@ -96,6 +129,7 @@ async def _run_provisioning(job_id: str, req: ProvisionRequest) -> None:
         cmd.append("--activate-payment-app")
 
     env = os.environ.copy()
+    output_lines: list[str] = []
 
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -105,14 +139,30 @@ async def _run_provisioning(job_id: str, req: ProvisionRequest) -> None:
             env=env,
             cwd=str(Path(__file__).parent),
         )
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=600)
-        output = stdout.decode(errors="replace")
+
+        # Stream stdout line by line for real-time progress tracking
+        async def _read_output() -> None:
+            assert proc.stdout is not None
+            async for raw_line in proc.stdout:
+                line = raw_line.decode(errors="replace").rstrip()
+                output_lines.append(line)
+                step = _parse_step(line)
+                if step and step not in _jobs[job_id]["steps"]:
+                    _jobs[job_id]["steps"].append(step)
+
+        try:
+            await asyncio.wait_for(_read_output(), timeout=600)
+        except asyncio.TimeoutError:
+            pass
+
+        await proc.wait()
+        output = "\n".join(output_lines)
 
         if proc.returncode == 0:
             _jobs[job_id].update({
                 "status": "success",
                 "finished_at": datetime.now(UTC).isoformat(),
-                "result": {"output": output[-4000:]},  # last 4000 chars
+                "result": {"output": output[-4000:]},
             })
         else:
             _jobs[job_id].update({
