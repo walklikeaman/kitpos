@@ -9,8 +9,6 @@ import json
 from dataclasses import dataclass
 from getpass import getpass
 from pathlib import Path
-import sys
-
 from dotenv import load_dotenv
 from playwright.async_api import Locator
 from playwright.async_api import Page
@@ -20,6 +18,7 @@ from playwright.async_api import async_playwright
 from maverick_agent.parsers.var_pdf import VarPdfParser
 from maverick_agent.config import Settings
 from maverick_agent.services.inbox import ImapInboxClient
+from maverick_agent.services.kit_var_api import var_rows_by_mid
 
 
 LOGIN_URL = "https://auth.paxstore.us/passport/login?client_id=admin&market=paxus"
@@ -27,8 +26,6 @@ SCREENSHOT_DIR = Path("tmp/screenshots")
 RUN_HISTORY_DIR = Path("tmp/run-history")
 RUN_HISTORY_FILE = RUN_HISTORY_DIR / "paxstore_runs.jsonl"
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-REPO_ROOT = PROJECT_ROOT.parents[1]
-KIT_DASHBOARD_AGENT_DIR = REPO_ROOT / "agents" / "kit-dashboard-merchant-data"
 DEFAULT_VAR_DOWNLOAD_DIR = PROJECT_ROOT / "downloads"
 PINPAD_MODELS_WITH_BACK_SCREEN = {"A3700", "3700"}
 
@@ -677,25 +674,11 @@ def get_var_data_from_kit_api(
 ) -> dict | None:
     if not settings.kit_api_key:
         return None
-    if not KIT_DASHBOARD_AGENT_DIR.exists():
+
+    rows = var_rows_by_mid(merchant_number, settings.kit_api_key)
+    if not rows:
         return None
 
-    sys.path.insert(0, str(KIT_DASHBOARD_AGENT_DIR / "src"))
-    from merchant_data.services.kit_api import MerchantAPIService, UnknownChainError
-
-    try:
-        var_items = MerchantAPIService(settings.kit_api_key).var_data_by_mid(merchant_number)
-    except UnknownChainError as exc:
-        chains = ", ".join(sorted(exc.chains))
-        raise RuntimeError(
-            f"UNKNOWN_CHAIN for {exc.merchant_name}: {chains}. "
-            "Follow agents/kit-dashboard-merchant-data/AGENT_CONTEXT.md before retrying."
-        ) from exc
-
-    if not var_items:
-        return None
-
-    rows = [item.to_dict() for item in var_items]
     if v_number:
         normalized = v_number.strip().upper()
         for row in rows:
@@ -984,7 +967,6 @@ def append_run_history(record: dict) -> None:
 
 async def main() -> None:
     load_dotenv()
-    load_dotenv(KIT_DASHBOARD_AGENT_DIR / ".env")
     parser = argparse.ArgumentParser(description="Provision PAX merchant, terminal, and app push tasks from VAR data.")
     parser.add_argument("--pdf", type=Path)
     parser.add_argument("--merchant-number", help="Merchant Number used to find/download the VAR PDF when --pdf is omitted.")
