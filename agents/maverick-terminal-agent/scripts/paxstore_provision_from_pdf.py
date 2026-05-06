@@ -1054,14 +1054,37 @@ async def main() -> None:
     username = os.environ.get("PAX_USERNAME") or input("PAX username: ").strip()
     password = os.environ.get("PAX_PASSWORD") or getpass("PAX password: ")
 
+    SESSION_FILE = PROJECT_ROOT / "tmp" / "paxstore_session.json"
+
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=not args.headed)
-            context = await browser.new_context(viewport={"width": 1440, "height": 1000})
+
+            # Reuse saved session if it exists (avoids ~30s login on every run)
+            if SESSION_FILE.exists():
+                context = await browser.new_context(
+                    storage_state=str(SESSION_FILE),
+                    viewport={"width": 1440, "height": 1000},
+                )
+                print("Reusing saved PAX Store session")
+            else:
+                context = await browser.new_context(viewport={"width": 1440, "height": 1000})
+
             page = await context.new_page()
             page.set_default_timeout(20000)
 
-            await login(page, username, password)
+            # Check if session is still valid by navigating to PAX Store
+            await page.goto("https://paxstore.us/admin/", wait_until="domcontentloaded", timeout=15000)
+            if "login" in page.url.lower() or "passport" in page.url.lower():
+                # Session expired or doesn't exist — log in fresh
+                print("Session expired or missing — logging in...")
+                await login(page, username, password)
+                # Save session for next run
+                SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
+                await context.storage_state(path=str(SESSION_FILE))
+                print(f"Session saved → {SESSION_FILE}")
+            else:
+                print("Session valid — skipping login")
             await open_terminal_management(page)
             if args.pos_serial and args.pinpad_serial:
                 await provision_two_device_workflow(
