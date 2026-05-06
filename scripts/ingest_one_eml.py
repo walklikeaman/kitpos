@@ -134,6 +134,18 @@ def get_embedding(text):
                 {"model":EMBED_MODEL,"input":text[:8000]})
     return r["data"][0]["embedding"]
 
+def already_exists(idx):
+    """Return True if this email index is already in Supabase."""
+    url=(f"{SUPABASE_URL}/rest/v1/documents"
+         f"?source=eq.email%3AInbox%3A{idx}&source_type=eq.email&select=id&limit=1")
+    req=urllib.request.Request(url,
+        headers={"apikey":SUPABASE_KEY,"Authorization":f"Bearer {SUPABASE_KEY}",
+                 "Accept":"application/json"},method="GET")
+    try:
+        with urllib.request.urlopen(req,context=_SSL,timeout=10) as r:
+            return len(json.loads(r.read()))>0
+    except: return False
+
 def insert_doc(idx,title,content,meta,emb):
     req=urllib.request.Request(
         f"{SUPABASE_URL}/rest/v1/documents",
@@ -157,6 +169,8 @@ def main():
     if fsize>MAX_EMAIL_BYTES: sys.exit(0)   # skip large, exit 0 (normal skip)
 
     idx=int(os.path.basename(fpath).replace(".eml",""))
+
+    if not dry_run and already_exists(idx): sys.exit(0)  # already ingested, skip
 
     raw=open(fpath,"rb").read()
     msg=email.message_from_bytes(raw,policy=email.policy.compat32)
