@@ -272,6 +272,160 @@ def check_serial(serial: str) -> dict:
     return {"provisioned": False, "last_run": None}
 
 
+# ── v2 endpoints (paxstore_v2 module-based, no subprocess) ────────────────────
+
+# Lazy import so that paxstore_v2 only loads when /v2/* endpoints are hit.
+def _import_paxstore_v2():  # noqa: D401
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent / "src"))
+    from maverick_agent import paxstore_v2 as _pv2  # noqa: E402
+    from maverick_agent.services.kit_var_api import (  # noqa: E402
+        merchant_details_by_mid,
+        var_rows_by_mid,
+    )
+    return _pv2, merchant_details_by_mid, var_rows_by_mid
+
+
+class DeviceSpec(BaseModel):
+    serial: str
+    model: str
+    role: str = "smart-pos"  # 'smart-pos' | 'pinpad'
+
+
+class ProvisionStandAloneRequest(BaseModel):
+    """Provision a stand-alone configuration: smart POS + optional pinpad.
+
+    Pipeline (only `smart_pos` gets template + TSYS + RECEIPT + Internal POS):
+      1. create_terminal for each device (smart_pos + pinpads, idempotent)
+      2. push_firmware to smart_pos
+      3. push_template (KIT-Android) to smart_pos
+      4. fill_tsys + fill_receipt + set_internal_pos_mode on smart_pos
+      5. NEXT loop until Stage 3 (does NOT activate)
+    """
+    merchant_mid: str
+    merchant_name: str = ""
+    smart_pos: DeviceSpec
+    pinpads: list[DeviceSpec] = []
+    var_v_number: str | None = None
+    template: str = "KIT-Android"
+
+
+async def _run_provision_stand_alone(job_id: str, req: ProvisionStandAloneRequest) -> None:
+    """Background task: orchestrate the v2 stand-alone provisioning pipeline."""
+    _jobs[job_id]["status"] = "running"
+    _jobs[job_id]["steps"] = []
+    pv2, merchant_details_by_mid, var_rows_by_mid = _import_paxstore_v2()
+
+    api_key = os.environ.get("KIT_API_KEY", "")
+
+    def step(label: str) -> None:
+        _jobs[job_id]["steps"].append(label)
+
+    try:
+        # Resolve VAR + merchant data outside the browser session (faster fail)
+        step("Resolving VAR data")
+        rows = var_rows_by_mid(req.merchant_mid, api_key)
+        if not rows:
+            raise RuntimeError(f"No VAR rows for MID {req.merchant_mid}")
+        if req.var_v_number:
+            var = next(
+                (r for r in rows if r.get("v_number", "").lstrip("V") == req.var_v_number.lstrip("V")),
+                None,
+            )
+            if var is None:
+                raise RuntimeError(f"VAR V-number {req.var_v_number} not found")
+        else:
+            var = rows[0]
+        step(f"VAR resolved: {var.get('dba')} TID={var.get('terminal_number')}")
+
+        step("Resolving merchant details (RECEIPT)")
+        merchant = merchant_details_by_mid(req.merchant_mid, api_key)
+        if not merchant:
+            raise RuntimeError(f"Merchant {req.merchant_mid} not found")
+        merchant["state"] = var.get("state", "")
+
+        async with pv2.launch_session(headless=True) as (_ctx, page):
+            # 1) Register all devices (idempotent — fails harmlessly if already exists)
+            for device in [req.smart_pos] + req.pinpads:
+                step(f"Creating terminal {device.model} SN={device.serial}")
+                try:
+                    await pv2.create_terminal(
+                        page,
+                        serial=device.serial, model=device.model,
+                        merchant_mid=req.merchant_mid,
+                        merchant_name=req.merchant_name or merchant.get("dba", ""),
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    step(f"  (skip / already exists?: {exc})")
+
+            # 2) Firmware on smart_pos
+            step(f"Pushing firmware to {req.smart_pos.serial}")
+            await pv2.open_terminal(page, req.smart_pos.serial, req.merchant_mid)
+            await pv2.push_firmware_to_terminal(page)
+
+            # 3) Template on smart_pos
+            step(f"Pushing template {req.template} to {req.smart_pos.serial}")
+            await pv2.open_terminal(page, req.smart_pos.serial, req.merchant_mid)
+            await pv2.push_template_to_terminal(page, template_name=req.template)
+
+            # 4) Open pending template task and fill TSYS + RECEIPT + Internal POS
+            step("Filling TSYS / RECEIPT / Internal POS on Edit Parameter")
+            await pv2.open_pending_template_task(page)
+            await pv2.fill_tsys_form(page, var)
+            await pv2.fill_receipt_form(page, merchant)
+            await pv2.set_internal_pos_mode(page)
+
+            # 5) NEXT until Stage 3 (does NOT activate)
+            step("Advancing NEXT until Stage 3 (Active Task)")
+            await pv2.advance_until_active_task(page, debug_prefix="provision-stand-alone")
+
+        _jobs[job_id].update({
+            "status": "success",
+            "finished_at": datetime.now(UTC).isoformat(),
+            "result": {"steps": list(_jobs[job_id]["steps"])},
+        })
+    except Exception as exc:  # noqa: BLE001
+        _jobs[job_id].update({
+            "status": "failed",
+            "finished_at": datetime.now(UTC).isoformat(),
+            "error": str(exc),
+        })
+
+
+@app.post("/v2/provision-stand-alone", response_model=JobStatus, status_code=202)
+async def provision_stand_alone(
+    req: ProvisionStandAloneRequest, background_tasks: BackgroundTasks
+) -> JobStatus:
+    """Start a stand-alone provisioning job.
+
+    Returns 202 with job_id; poll GET /jobs/{job_id} for live status.
+
+    Body example:
+    ```
+    {
+      "merchant_mid": "201100308288",
+      "merchant_name": "Alshuja Market",
+      "smart_pos": {"serial": "1240490019", "model": "A80", "role": "smart-pos"},
+      "pinpads":   [{"serial": "1920006225", "model": "Q25", "role": "pinpad"}],
+      "var_v_number": "V6747448",
+      "template": "KIT-Android"
+    }
+    ```
+    """
+    job_id = str(uuid.uuid4())[:8]
+    _jobs[job_id] = {
+        "job_id": job_id,
+        "status": "queued",
+        "created_at": datetime.now(UTC).isoformat(),
+        "request": req.model_dump(),
+        "finished_at": None,
+        "result": None,
+        "error": None,
+    }
+    background_tasks.add_task(_run_provision_stand_alone, job_id, req)
+    return JobStatus(**_jobs[job_id])
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "8080")))

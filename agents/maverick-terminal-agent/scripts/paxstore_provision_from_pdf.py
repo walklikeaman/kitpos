@@ -19,6 +19,7 @@ from maverick_agent.parsers.var_pdf import VarPdfParser
 from maverick_agent.config import Settings
 from maverick_agent.services.inbox import ImapInboxClient
 from maverick_agent.services.kit_var_api import var_rows_by_mid
+from maverick_agent.services.session_store import load_session, save_session, delete_session
 
 
 LOGIN_URL = "https://auth.paxstore.us/passport/login?client_id=admin&market=paxus"
@@ -462,11 +463,43 @@ async def select_terminal(page: Page, data: PaxProvisioningData, device: Termina
 
 
 async def open_push_task(page: Page) -> None:
-    await click_button_or_text(page, "App & Firmware")
-    await page.wait_for_timeout(1500)
+    # New PAX UI: "App & Firmware" tab is gone — go straight to "Push Task".
+    for label in ["App & Firmware", "Apps & Firmware"]:
+        try:
+            await click_button_or_text(page, label)
+            await page.wait_for_timeout(1500)
+            break
+        except Exception:  # noqa: BLE001
+            continue
     await click_button_or_text(page, "Push Task")
-    await page.wait_for_timeout(2000)
+    await page.wait_for_timeout(2500)
     await snapshot(page, "08-push-task")
+    # Save a full-page screenshot + HTML for the new UI mapping.
+    try:
+        from pathlib import Path as _P
+        _P("tmp/ui-debug").mkdir(parents=True, exist_ok=True)
+        await page.screenshot(path="tmp/ui-debug/push-task-page.png", full_page=True)
+        html = await page.content()
+        _P("tmp/ui-debug/push-task-page.html").write_text(html, encoding="utf-8")
+        # Dump all clickable + button-like elements with class+text
+        ui = await page.evaluate("""() => {
+            const sel = 'button, [role=\"button\"], .el-button, .el-tabs__item, [role=\"tab\"], .el-radio, .el-card__header, .el-icon-plus, [class*=\"plus\"]';
+            return Array.from(document.querySelectorAll(sel))
+                .filter(e => e.offsetParent !== null)
+                .slice(0, 60)
+                .map(e => ({
+                    tag: e.tagName,
+                    cls: (e.className || '').toString().slice(0, 60),
+                    text: (e.innerText || '').trim().slice(0, 60),
+                    title: e.title || '',
+                    id: e.id
+                }));
+        }""")
+        print("DEBUG visible interactive elements on Push Task page:")
+        for u in ui:
+            print(f"  {u}")
+    except Exception as exc:  # noqa: BLE001
+        print(f"DEBUG dump failed: {exc}")
 
 
 async def push_latest_firmware(page: Page, submit: bool) -> None:
@@ -1060,37 +1093,62 @@ async def main() -> None:
             "No interactive login in headless/server mode."
         )
 
-    SESSION_FILE = PROJECT_ROOT / "tmp" / "paxstore_session.json"
+    SESSION_KEY = "paxstore"
 
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=not args.headed)
 
-            # Reuse saved session if it exists (avoids ~30s login on every run)
-            if SESSION_FILE.exists():
+            # Reuse session from Supabase (autonomous, no local files)
+            saved_state = None
+            try:
+                saved_state = load_session(SESSION_KEY)
+            except Exception as exc:  # noqa: BLE001
+                print(f"Supabase session load failed ({exc}); will log in fresh.")
+
+            if saved_state:
                 context = await browser.new_context(
-                    storage_state=str(SESSION_FILE),
+                    storage_state=saved_state,
                     viewport={"width": 1440, "height": 1000},
                 )
-                print("Reusing saved PAX Store session")
+                print("Reusing PAX Store session from Supabase")
             else:
                 context = await browser.new_context(viewport={"width": 1440, "height": 1000})
 
             page = await context.new_page()
             page.set_default_timeout(20000)
 
-            # Check if session is still valid by navigating to PAX Store
-            await page.goto("https://paxstore.us/admin/", wait_until="domcontentloaded", timeout=15000)
-            if "login" in page.url.lower() or "passport" in page.url.lower():
-                # Session expired or doesn't exist — log in fresh
+            # Check if session is still valid by navigating to PAX Store.
+            # Wait for either the admin menu (logged in) or the login form (logged out)
+            # to appear; PAX redirects to auth.paxstore.us asynchronously after initial load.
+            await page.goto("https://paxus.paxstore.us/admin/", wait_until="domcontentloaded", timeout=20000)
+            try:
+                await page.wait_for_selector(
+                    "#left_menu_terminal_management, input[name='username'], input[type='password']",
+                    timeout=20000,
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            await page.wait_for_timeout(1500)
+            current_url = page.url.lower()
+            if "login" in current_url or "passport" in current_url or "auth.paxstore" in current_url:
                 print("Session expired or missing — logging in...")
+                if saved_state:
+                    try:
+                        delete_session(SESSION_KEY)
+                    except Exception:  # noqa: BLE001
+                        pass
                 await login(page, username, password)
-                # Save session for next run
-                SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
-                await context.storage_state(path=str(SESSION_FILE))
-                print(f"Session saved → {SESSION_FILE}")
+                # Persist new session to Supabase
+                try:
+                    new_state = await context.storage_state()
+                    save_session(SESSION_KEY, new_state)
+                    print("Session saved → Supabase (agent_sessions)")
+                except Exception as exc:  # noqa: BLE001
+                    print(f"Warning: failed to persist session to Supabase: {exc}")
             else:
                 print("Session valid — skipping login")
+            await page.wait_for_selector("#left_menu_terminal_management", timeout=20000)
             await open_terminal_management(page)
             if args.pos_serial and args.pinpad_serial:
                 await provision_two_device_workflow(

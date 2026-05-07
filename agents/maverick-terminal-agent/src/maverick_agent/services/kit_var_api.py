@@ -146,12 +146,16 @@ def _find_merchant_id_by_mid(mid_int: int, api_key: str) -> int | None:
     Search merchants page-by-page until we find one whose terminal MID matches.
     Uses /terminal endpoint with MID filter for efficiency.
     """
-    # Direct terminal search by merchantNumber is faster than scanning merchants
-    data = _get("/terminal", {"filter[merchantNumber][eq]": mid_int, "per-page": 10}, api_key)
-    items = data.get("items") or data.get("data") or []
-    if items:
-        merchant = items[0].get("merchant") or {}
-        return merchant.get("id")
+    # Try direct merchant lookup by MID (fast path)
+    # KIT API filter[company.mid][eq] is the canonical filter; we try a couple of variants.
+    for mid_filter in ("filter[company.mid][eq]", "filter[dbas.processing.mid][eq]"):
+        try:
+            data = _get("/merchant", {mid_filter: mid_int, "per-page": 5}, api_key)
+            items = data.get("items") or data.get("data") or []
+            if items:
+                return items[0].get("id")
+        except RuntimeError:
+            continue
 
     # Fallback: scan merchants page-by-page
     page = 1
@@ -160,7 +164,8 @@ def _find_merchant_id_by_mid(mid_int: int, api_key: str) -> int | None:
         for item in (data.get("items") or data.get("data") or []):
             for dba in item.get("dbas") or []:
                 proc = dba.get("processing") or {}
-                if int(proc.get("mid", 0)) == mid_int:
+                mid_val = proc.get("mid")
+                if mid_val is not None and int(mid_val) == mid_int:
                     return item["id"]
         meta = data.get("_meta") or data.get("meta") or {}
         if page >= int(meta.get("pageCount", meta.get("last_page", 1))):
@@ -168,6 +173,41 @@ def _find_merchant_id_by_mid(mid_int: int, api_key: str) -> int | None:
         page += 1
 
     return None
+
+
+def merchant_details_by_mid(merchant_number: str, api_key: str) -> dict | None:
+    """
+    Return full merchant record (with street, phone, dba) by 12-digit MID.
+
+    Used to fill RECEIPT Header Lines for stand-alone terminal provisioning.
+    Returns None if merchant not found.
+    """
+    mid_int = int(merchant_number)
+    merchant_id = _find_merchant_id_by_mid(mid_int, api_key)
+    if merchant_id is None:
+        return None
+    try:
+        merchant = _get(f"/merchant/{merchant_id}", {}, api_key)
+    except RuntimeError:
+        return None
+    # Extract the primary DBA + address. Phone lives under
+    # dbas[0].customerServiceContact.phone (NOT at the top level).
+    # State comes back as an ID array — get the human-readable name from VAR data.
+    dbas = merchant.get("dbas") or []
+    primary_dba = dbas[0] if dbas else {}
+    address = primary_dba.get("address") or {}
+    contact = primary_dba.get("customerServiceContact") or {}
+    return {
+        "merchant_id":   merchant_id,
+        "name":          merchant.get("name", ""),
+        "dba":           primary_dba.get("name", merchant.get("name", "")),
+        "phone":         contact.get("phone", ""),
+        "email":         contact.get("email", ""),
+        "street":        address.get("street") or address.get("line1") or address.get("address1", ""),
+        "city":          address.get("city", ""),
+        "zip":           address.get("zip") or address.get("postalCode", ""),
+        # state comes as an ID array in this API; resolve via VAR row data instead.
+    }
 
 
 def _get_terminals(merchant_id: int, api_key: str) -> list[dict]:
