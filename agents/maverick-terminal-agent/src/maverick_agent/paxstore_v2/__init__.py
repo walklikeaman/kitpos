@@ -33,6 +33,7 @@ from .forms import (  # noqa: F401
     detect_stage,
     fill_autocomplete,
     fill_text_by_id,
+    js_set_inputs,
 )
 from .operations import (  # noqa: F401
     activate_pending_task,

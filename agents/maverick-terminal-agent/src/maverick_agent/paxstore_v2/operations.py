@@ -20,6 +20,7 @@ from .forms import (
     click_tab_exact,
     fill_autocomplete,
     fill_text_by_id,
+    js_set_inputs,
 )
 
 
@@ -294,22 +295,30 @@ async def fill_tsys_form(page: Page, var: dict) -> None:
 
     Expects keys: dba, bin, agent_bank, chain, mid, store_number, terminal_number,
     city, state, zip, mcc, v_number (or terminal_id_number).
+
+    Uses `js_set_inputs` to push all 11 plain text fields in ONE
+    `page.evaluate()` call (verified 2026-05-08, see file-build-flow.md).
+    Autocomplete fields (state, time_zone) still go through option-click
+    because Material-UI keeps the selected-option state outside the <input>.
     """
     print("→ filling TSYS fields")
     await click_tab_exact(page, "TSYS")
     f = TSYS_FIELD_IDS
-    await fill_text_by_id(page, f["merchant_name"],   var.get("dba", ""),              "Merchant Name")
-    await fill_text_by_id(page, f["bin"],             var.get("bin", ""),              "BIN")
-    await fill_text_by_id(page, f["agent_number"],    var.get("agent_bank", ""),       "Agent Bank Number")
-    await fill_text_by_id(page, f["chain_number"],    var.get("chain", ""),            "Agent Chain Number")
-    await fill_text_by_id(page, f["mid"],             var.get("mid", ""),              "Merchant Number")
-    await fill_text_by_id(page, f["store_number"],    var.get("store_number", ""),     "Store Number")
-    await fill_text_by_id(page, f["terminal_number"], var.get("terminal_number", ""),  "Terminal Number")
-    await fill_text_by_id(page, f["merchant_city"],   var.get("city", ""),             "Merchant City")
-    await fill_text_by_id(page, f["city_code"],       var.get("zip", ""),              "ZIP / City Code")
-    await fill_text_by_id(page, f["category_code"],   var.get("mcc", ""),              "Category Code (MCC)")
     tid_value = var.get("v_number", "").lstrip("V") or var.get("terminal_id_number", "")
-    await fill_text_by_id(page, f["tid"],             tid_value,                        "TID")
+    text_values: dict[str, str] = {
+        f["merchant_name"]:   var.get("dba", ""),
+        f["bin"]:             var.get("bin", ""),
+        f["agent_number"]:    var.get("agent_bank", ""),
+        f["chain_number"]:    var.get("chain", ""),
+        f["mid"]:             var.get("mid", ""),
+        f["store_number"]:    var.get("store_number", ""),
+        f["terminal_number"]: var.get("terminal_number", ""),
+        f["merchant_city"]:   var.get("city", ""),
+        f["city_code"]:       var.get("zip", ""),
+        f["category_code"]:   var.get("mcc", ""),
+        f["tid"]:             tid_value,
+    }
+    await js_set_inputs(page, text_values, label="TSYS")
     state = var.get("state", "")
     if state:
         await fill_autocomplete(page, f["merchant_state"], state[:2], state, "Merchant State")
@@ -322,6 +331,8 @@ async def fill_receipt_form(page: Page, merchant: dict) -> None:
 
     Expects keys: dba (or name), street, city, state, zip, phone.
     For stand-alone scenario only.
+
+    Uses `js_set_inputs` to push all 4 header lines in one JS call.
     """
     print("→ filling RECEIPT fields (stand-alone)")
     await click_tab_exact(page, "RECEIPT")
@@ -333,10 +344,16 @@ async def fill_receipt_form(page: Page, merchant: dict) -> None:
     zipc = merchant.get("zip", "")
     line3 = ", ".join(p for p in [city, state, zipc] if p)
     phone = merchant.get("phone", "")
-    await fill_text_by_id(page, f["header_1"], dba,    "Header Line 1 (DBA)")
-    await fill_text_by_id(page, f["header_2"], street, "Header Line 2 (street)")
-    await fill_text_by_id(page, f["header_3"], line3,  "Header Line 3 (city/state/zip)")
-    await fill_text_by_id(page, f["header_4"], phone,  "Header Line 4 (phone)")
+    await js_set_inputs(
+        page,
+        {
+            f["header_1"]: dba,
+            f["header_2"]: street,
+            f["header_3"]: line3,
+            f["header_4"]: phone,
+        },
+        label="RECEIPT",
+    )
     await shot(page, "receipt-filled")
 
 

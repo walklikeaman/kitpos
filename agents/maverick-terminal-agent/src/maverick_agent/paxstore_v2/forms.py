@@ -58,6 +58,67 @@ async def fill_autocomplete(
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# JS-batch field set (verified 2026-05-08)
+# ──────────────────────────────────────────────────────────────────────────────
+
+# JS pattern verified live on Alshuja Market 1240490019 in BroadPOS Sierra.
+# See wiki/concepts/file-build-flow.md "Stage-2 form persistence — re-fire
+# technique" for the click-through trace and timing details.
+#
+# Native HTMLInputElement value setter is required because React's onChange
+# only fires when the underlying setter is invoked (assigning .value directly
+# is silently ignored on controlled inputs).
+_JS_SET_INPUTS = """
+(entries) => {
+  const setter = Object.getOwnPropertyDescriptor(
+    window.HTMLInputElement.prototype, 'value'
+  ).set;
+  const out = [];
+  for (const [id, target] of entries) {
+    const el = document.getElementById(id);
+    if (!el) { out.push({id, found:false, value:null, target}); continue; }
+    const value = String(target ?? '');
+    el.focus();
+    setter.call(el, value);
+    el.dispatchEvent(new Event('input',  {bubbles:true}));
+    el.dispatchEvent(new Event('change', {bubbles:true}));
+    el.blur();
+    out.push({id, found:true, value, target});
+  }
+  return out;
+}
+"""
+
+
+async def js_set_inputs(
+    page: Page, values: dict[str, str], *, label: str = "batch"
+) -> list[dict]:
+    """Set plain <input> values in ONE JS call via native setter + input/change events.
+
+    Replaces N per-field Playwright `.fill()` round-trips with a single
+    `page.evaluate()` for an entire sub-tab. Works for value→value (re-fire on
+    pre-filled forms) and empty→value (initial fill) cases on controlled
+    React inputs.
+
+    NOT suitable for:
+      - Material-UI Autocomplete (selected-option state lives outside the
+        input element; use `fill_autocomplete`).
+      - Material-UI Select / native <select> elements (use a click-based
+        helper).
+
+    Returns one dict per id: `{id, found, value, target}`. Logs each result.
+    """
+    entries = list(values.items())
+    results = await page.evaluate(_JS_SET_INPUTS, entries)
+    for r in results:
+        if not r["found"]:
+            print(f"  ⚠️ {label}: id={r['id']} NOT FOUND in DOM")
+        else:
+            print(f"  {label}: {r['id']} = {r['value']!r}")
+    return results
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Tab navigation (parameter editor sub-tabs)
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -189,4 +250,5 @@ __all__ = [
     "detect_stage",
     "fill_autocomplete",
     "fill_text_by_id",
+    "js_set_inputs",
 ]
