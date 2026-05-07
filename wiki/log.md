@@ -1,0 +1,33 @@
+# Wiki Log
+
+Append-only chronological record. One entry per ingest / query worth filing / lint pass.
+
+Format: `## [YYYY-MM-DD] {ingest|query|lint} | {short title}` followed by 1–3 lines of what happened and which pages were touched.
+
+Tip: `grep "^## \[" log.md | tail -10` shows recent activity.
+
+---
+
+## [2026-05-07] init | wiki scaffolded
+Created `wiki/` (index, log, overview, entities/, concepts/, sources/) and root `CLAUDE.md` schema. Raw sources live in `Context/`. No pages ingested yet.
+
+## [2026-05-07] ingest | WhatsApp — Gahl Oren (2026-01-16 → 2026-05-05)
+Ingested `Context/WhatsApp Chat - Gahl Oren/_chat.txt` (2494 lines). Created source page `sources/whatsapp-gahl-oren.md`, entity pages for Gahl/Ran/Bakil/KIT POS org, and concept pages for application-onboarding, file-build-flow, dda-update-flow, pricing-change-flow, sunmi-provisioning, kit-apps-by-device, delivery-vendors. Audio attachments (92 .opus files) skipped — no transcripts. Index updated.
+
+## [2026-05-07] ingest | API docs (kit-api-reference.html + swagger.json ×2)
+Ingested `Context/kit-api-reference.html` (KIT POS / Maverick API, 33 KB) and `Context/swagger.json` + `Context/swagger (1).json` (identical files, Uber Public API for delivery + Eats, OpenAPI 3.0.1, 75 paths / 30 tags). Created `sources/api-docs.md`, `concepts/kit-api.md` (points to memory `reference_kit_api_endpoints.md` for the canonical endpoint table), `concepts/uber-public-api.md`. Index updated.
+
+## [2026-05-07] ingest | Context/ scaffolding (MD dumps, JS drafts, N8N, data exports)
+Read `MAVERICK_CHAT_CONTEXT.md`, `NEW_CHAT_CONTEXT.md`, `MONOREPO_STATUS.md`, `README.md` — confirmed stale 2026-04-24 snapshots (2-agent state). Skimmed JS scaffolding files, N8N exports, data JSONs. Created single source page `sources/context-scaffolding.md` cataloguing them with pointers to current truth (live agent code, root docs, memory). VIBEPROXY-CLAUDE-CODE-SETUP.md marked off-topic, not ingested.
+
+## [2026-05-07] tooling | memory-compiler + Obsidian wired up
+Installed `uv` (0.11.11) + cloned `coleam00/claude-memory-compiler` to `.claude-memory-compiler/` (gitignored). Hooks (SessionStart/PreCompact/SessionEnd) registered in `.claude/settings.json` with `cd` prefix. Smoke-tested session-start.py — empty-index output OK. Obsidian vault config: `attachmentFolderPath=Context/clipped`, relative markdown links, `alwaysUpdateLinks`. Updated CLAUDE.md with UI/tooling section. `.gitignore` now excludes `.claude-memory-compiler/` and personal Obsidian workspace state.
+
+## [2026-05-08] tooling | memory compiler fixed
+Diagnosed 2026-05-07 22:40 SessionEnd `FLUSH_ERROR`: bundled `claude_agent_sdk` CLI exited with code 1, stderr suppressed via `DEVNULL`. Three defensive fixes: (1) inject explicit PATH (`/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, `~/.claude/local`) into spawn env in both `session-end.py` and `pre-compact.py`; (2) capture stderr to `scripts/flush.stderr.log` with per-invocation timestamp markers, replacing `DEVNULL`; (3) override `ClaudeAgentOptions.cli_path` in `flush.py` with the system-installed `claude` binary (auth'd via subscription) when present, falling back to bundled. End-to-end test passed: hook → spawn → flush.py → system claude → daily log entry. `.venv` was healthy — task brief's bug 1 didn't apply on this machine. Daily logs now auto-generate on SessionEnd.
+
+## [2026-05-08] session | Stage-2 click-through verified + re-fire technique
+End-to-end clicked through BroadPOS Sierra Stage 2 on Alshuja Market 1240490019 (A80, MID 201100308288) via `claude-in-chrome` in Chrome. PREVIOUS from Stage 3 → walked RECEIPT (10) → TSYS (13) → MISC (1) — all 24 workflow field IDs from `paxstore_v2/field_ids.py` resolved via `getElementById` in the live React form. NEXT triggered the green `App parameter saved successfully` toast and advanced Stage 2 → Stage 3. Discovered that **re-firing `input`/`change` events with the existing value via the native HTMLInputElement value setter persists the form** — no value change needed, no per-field Playwright `fill()`, one JS call per sub-tab. Updated `concepts/file-build-flow.md` with a new "Stage-2 form persistence — re-fire technique" subsection. Side note: a Chrome password-manager extension on `auth.paxstore.us` blocked all MCP clicks until manual login; problem disappears once redirected to `/admin`. Headless Playwright won't see this.
+
+## [2026-05-07] session | PAX Store 2026 UI rediscovery + Q25/A80 onboarding
+Onboarded Alshuja Market (MID 201100308288) with Q25 (1920006225) + A80 (1240490019). Discovered PAX Store UI redesigned in 2026: legacy `paxstore_provision_from_pdf.py` breaks past terminal creation. Built v2 Playwright scripts under `agents/maverick-terminal-agent/scripts/{create_terminal,push_template,push_firmware,activate_task,fill_tsys,explore_template}_v2.py`. Mapped new flow: Push Task → +PUSH APP → Push Template (sub-tab); 5 stages; 13 parameter sub-tabs in BroadPOS Sierra; NEXT-on-each-tab persists data. Q25 = "dumb" pinpad (no apps), A80 = smart POS host (template + TSYS + receipt + Internal POS for stand-alone). Updated `concepts/file-build-flow.md` with 2026-UI section, added Q25/A80 to `concepts/kit-apps-by-device.md`, created dev doc `agents/maverick-terminal-agent/docs/PAXSTORE_AUTOMATION_V2.md` with selectors / field IDs. Field IDs preserved from legacy script: `0_tsys_F1_tsys_param_BIN` etc. RECEIPT IDs `*_sys_F2_sys_cap_receiptHeader0..4`. Open issues: POS Internal/External accordion expansion, helper-code duplication across 6 scripts, server.py still subprocess'es legacy script.
