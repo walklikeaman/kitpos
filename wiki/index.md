@@ -18,6 +18,7 @@ Catalog of every page in this wiki. Read this first when answering project quest
 - [DDA Update Flow](concepts/dda-update-flow.md) — bank-account-change ticket + Docuseal/WeSign signing
 - [Pricing Change Flow](concepts/pricing-change-flow.md) — two-ticket workflow for discount-schedule changes
 - [Sunmi Provisioning](concepts/sunmi-provisioning.md) — Atlassian ticket → MDM remark → Transfer Device
+- [Kit Operator Agent](concepts/kit-operator-agent.md) — TS chat agent on Render that fronts onboarding via Telegram + Claude Code; 12 tools, vision parser, crops, full playbook
 - [KIT Apps × Device Matrix](concepts/kit-apps-by-device.md) — what to push to A35 / A3700 / L1400 / Sunmi / A800
 - [Delivery Vendors](concepts/delivery-vendors.md) — Otter / Deliverect / Instacart / NRS landscape
 - [KIT POS / Maverick API](concepts/kit-api.md) — base URLs, auth, current token scope; pointer to full memory reference
