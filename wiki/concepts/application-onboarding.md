@@ -56,13 +56,23 @@ The KIT API token cannot delete applications — only the underlying
 processor purges them periodically. So a pile of test/orphan
 applications accumulates. Reuse them.
 
-**Test-app pool (free as of 2026-05-10):**
-- 758354 — Minna Mart (overwritable)
-- 756689 — empty skeleton (overwritable)
-- 756683 — Test Company LLC (overwritable)
+**Test-app pool (state as of 2026-05-10 — keep updated):**
+| App ID | Status | Notes |
+|---|---|---|
+| 758354 | Free (sanitised 2026-05-10) | "Test Company LLC" placeholder; document attachment 29351960 unlinked from this app — was a real DL/check that confused operators |
+| 756689 | Free (empty since creation) | minimal skeleton |
+| 756683 | Free | "Test Company LLC" placeholder |
+| 756692 | **In use — SMOKER FRIENDLY LIVERMORE** | started 2026-05-10 |
 
-**Currently in use:**
-- 756692 — SMOKER FRIENDLY LIVERMORE (since 2026-05-10)
+> ⚠️ When sanitising a test app, ALWAYS overwrite with the standard
+> placeholder ("Test Company LLC", EIN 111111111, address 123 Test
+> Street / Testville CA 90001, principal Test User CEO 111-11-1111,
+> bank 000000000 / 0000000000) AND set
+> `serviceDescription: "TEST APPLICATION — DO NOT PROCESS. Reusable
+> test slot for the kitpos-operator agent."` so anyone glancing at
+> the app can see at a glance that it's not real. Real-looking data
+> in a test app actively harms — confused staff almost ran a real
+> processor flow on Minna Mart before this rule was set.
 
 When asked to onboard a new merchant: take the oldest free pool entry,
 overwrite all fields. Only POST a brand-new application when the user
