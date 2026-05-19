@@ -124,11 +124,13 @@ API: `POST /attachment/upload` (multipart) → `POST /boarding-application/{id}/
   appears in the EIN letter or DL. Source preference: DL `LAST NAME`
   + `FIRST NAME` fields. EIN letter only gives the responsible
   party's name, not always full legal.
-- **Title:** Default `"CEO"`. Override only if a document explicitly
-  says President / Manager / Partner. **Never use `"Owner"`** —
-  legacy field, accepted by API but not displayed in KIT processor
-  view. (Gahl's table above lists "Sole Prop → Owner" — that's the
-  manual UI label; the API equivalent is still `"CEO"`.)
+- **Title:** Depends on entity type:
+  - `LLC` or `Corporation` → **`"CEO"`**
+  - `SoleProprietorship` (Individual) → **`"Owner"`**
+  - Override to President / Manager / Partner only if a document
+    explicitly states that title.
+  Previous rule said "never use Owner" — corrected 2026-05-19: the
+  API accepts Owner and it is the correct title for Sole Props.
 - **Ownership:** 100% by default for single-member LLC and Sole Prop.
   **Multi-member LLC requires explicit ownership split** — see the
   detection rule below. Don't blindly set 100%.
@@ -175,27 +177,43 @@ is set by the operator in the dashboard UI.
 
 ### Founded date — source priority
 
-1. EIN issue date from IRS Letter CP575B (most authoritative legal
-   formation date for a new entity)
-2. Seller's Permit / business license start date (if the entity
-   pre-existed the EIN, e.g. sole prop converting to LLC)
-3. Operating Agreement formation date (if available)
-4. Never use today + offset; never invent a future date
+1. EIN issue date from IRS Letter CP575B (most authoritative)
+2. Seller's Permit / business license start date
+3. Operating Agreement formation date
+4. **If no tax/government document with an issue date is present →
+   use the 1st day of the current month** (e.g. 2026-05-01).
+   Never use today's date; always the 1st of the month.
+5. Never set a future date. If computed date is in the future,
+   use the 1st of the current month instead.
 
 `founded` field format: ISO `YYYY-MM-DD`.
 
-### Entity type — extracted from documents
+### Entity type — detection workflow
 
-| Document phrasing | `company.type` |
-|---|---|
-| "Inc", "Corp", "Corporation" | `Corporation` |
-| "LLC" | `LLC` |
-| Sole proprietor, no entity name | `SoleProprietorship` |
-| "Partnership", "LP", "LLP" | `Partnership` |
+Parse all uploaded documents first, then classify:
 
-Don't guess from voided check footer alone — the bank account holder
-name doesn't always match legal entity. Cross-check with EIN letter
-or seller permit.
+| Document phrasing | `company.type` | Principal title |
+|---|---|---|
+| "Inc", "Corp", "Corporation" | `Corporation` | `CEO` |
+| "LLC" | `LLC` | `CEO` |
+| "Partnership", "LP", "LLP" | `Partnership` | `CEO` |
+| Sole proprietor / no entity suffix / owner name = company name | `SoleProprietorship` | `Owner` |
+
+**Sole Proprietor signals:**
+- EIN letter shows an individual's name (not a business entity name)
+- No "LLC", "Inc", "Corp" suffix anywhere in the documents
+- Voided check holder name matches personal name on DL
+- Application form lists individual name as both owner and business name
+
+**For Sole Proprietors:**
+- `company.name` = owner's full legal name (no separate business entity)
+- `company.type` = `SoleProprietorship`
+- `principal.title` = `Owner` (not CEO)
+- EIN may be same as SSN — flag as warning but proceed
+- No separate DBA needed unless merchant operates under a trade name
+
+Don't guess from voided check footer alone — cross-check with EIN
+letter or seller permit for the definitive entity type.
 
 ### KIT API ergonomics (verified the hard way)
 
