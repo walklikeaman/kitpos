@@ -58,8 +58,12 @@ applications accumulates. Reuse them.
 
 **Agent ID reference:**
 - `agent.id = 146274` — our programmatic API token (kitpos-operator / kit-dashboard-merchant-data)
-- `agent.id = 11803` — Nikita's dashboard user account (manual or other agent)
+- `agent.id = 11803` — Nikita's dashboard user account (manual creation, or apps not yet touched via API token)
 - Any other `agent.id` — unknown third party
+
+> Note: `agent.id` reflects who **last modified** the application, not who created it.
+> A PUT via the API token flips it to 146274; an untouched manually-created app stays at 11803.
+> Both are "ours" — treat either as safe to reuse if `company.name` is the placeholder.
 
 **Test-app pool (state as of 2026-05-19 — keep updated):**
 | App ID | agent.id | Status | Notes |
@@ -107,16 +111,17 @@ print(f'company.name={name!r}  agent.id={agent_id}')
 "
 ```
 
-A slot is safe to reuse **only if both** conditions hold:
-- `company.name == "Test Company LLC"` (our standard placeholder)
-- `agent.id == 146274` (our programmatic API token)
+A slot is safe to reuse if:
+- `company.name == "Test Company LLC"` OR `company.name` is null/empty (our placeholder)
+- `agent.id` is either `146274` (API token) or `11803` (Nikita dashboard) — both are "ours"
 
-If `company.name != "Test Company LLC"` → **STOP.** Warn the operator
+If `company.name` is a **real merchant name** → **STOP.** Warn the operator
 that this slot has real data, and ask for explicit confirmation before
 doing anything.
 
-If `agent.id != 146274` → **STOP.** Warn that the application was
-created by a different user or agent, and ask for explicit confirmation.
+If `agent.id` is **anything other than 146274 or 11803** → **STOP.** Warn
+that the application belongs to an unknown agent, and ask for explicit
+confirmation.
 
 > **Root cause — MT Electronics incident (2026-05-19):** An agent
 > selected app 762710 as a "test slot" because the pool list showed
