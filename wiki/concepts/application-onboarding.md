@@ -50,43 +50,29 @@ Source of truth for the merchant-data Python implementation is
 mirrors the API-level rules in one place so a TS agent can follow
 them too.
 
-### UPDATE existing > CREATE new
+### CREATE new for every new merchant (rule updated 2026-05-19)
 
-The KIT API token cannot delete applications — only the underlying
-processor purges them periodically. So a pile of test/orphan
-applications accumulates. Reuse them.
+Each new merchant onboarding always starts with a fresh `POST /boarding-application`.
+Do not reuse or overwrite existing applications for new merchants.
 
-**Agent ID reference:**
-- `agent.id = 146274` — our programmatic API token (kitpos-operator / kit-dashboard-merchant-data)
-- `agent.id = 11803` — Nikita's dashboard user account (manual creation, or apps not yet touched via API token)
-- Any other `agent.id` — unknown third party
+The old "test-pool reuse" pattern is **retired**. It caused incidents where
+in-progress real onboardings were silently overwritten (MT Electronics, 2026-05-19).
 
-> Note: `agent.id` reflects who **last modified** the application, not who created it.
-> A PUT via the API token flips it to 146274; an untouched manually-created app stays at 11803.
-> Both are "ours" — treat either as safe to reuse if `company.name` is the placeholder.
+**Only modify an existing application when the operator explicitly references
+a specific app ID** ("edit app 762710", "fix the bank fields on 756692", etc.).
 
-**Test-app pool (state as of 2026-05-19 — keep updated):**
-| App ID | agent.id | Status | Notes |
-|---|---|---|---|
-| 758354 | 11803 | Free (sanitised 2026-05-10) | "Test Company LLC" placeholder |
-| 756689 | 11803 | Free (empty since creation) | minimal skeleton |
-| 756683 | 11803 | Free | "Test Company LLC" placeholder |
-| 756692 | 11803 | **In use — SMOKER FRIENDLY LIVERMORE** | started 2026-05-10 |
-| 764333 | 146274 | Free (empty) | created by agent, never used |
-| 764195 | 146274 | Free (empty) | created by agent, never used |
-| 764192 | 146274 | Free (empty) | created by agent, never used |
-| 762713 | 146274 | **In use — AL-OMAIS MARKET** | onboarded 2026-05-19 |
-| 762710 | 146274 | Partial — MT Electronics Inc | data restored 2026-05-19; bank + docs missing — need new DL/check from merchant |
+**Agent ID reference (for auditing, not slot selection):**
+- `agent.id = 146274` — our programmatic API token
+- `agent.id = 11803` — Nikita's dashboard account (manual edits)
+- `agent.id` reflects who **last modified** the record, not who created it
 
-> ⚠️ When sanitising a test app, ALWAYS overwrite with the standard
-> placeholder ("Test Company LLC", EIN 111111111, address 123 Test
-> Street / Testville CA 90001, principal Test User CEO 111-11-1111,
-> bank 000000000 / 0000000000) AND set
-> `serviceDescription: "TEST APPLICATION — DO NOT PROCESS. Reusable
-> test slot for the kitpos-operator agent."` so anyone glancing at
-> the app can see at a glance that it's not real. Real-looking data
-> in a test app actively harms — confused staff almost ran a real
-> processor flow on Minna Mart before this rule was set.
+**Known applications (historical — do not reuse for new onboardings):**
+| App ID | Status | Notes |
+|---|---|---|
+| 762713 | In use — AL-OMAIS MARKET | onboarded 2026-05-19 |
+| 762710 | Partial — MT Electronics Inc | bank + docs missing; needs new DL/check from merchant |
+| 756692 | In use — SMOKER FRIENDLY LIVERMORE | started 2026-05-10 |
+| 758354 / 756683 / 756689 / 764333 / 764195 / 764192 | Idle test slots | "Test Company LLC" placeholders — do not overwrite |
 
 > ⛔ NEVER invent any data field — company name, DBA, address,
 > EIN, SSN, routing/account number, phone, email, or any other
@@ -96,9 +82,9 @@ applications accumulates. Reuse them.
 > incident). This rule applies equally to test slots and real
 > onboardings.
 
-### Application ownership check (MANDATORY before overwriting)
+### Application ownership check (only when editing an existing app)
 
-Before overwriting **any** application slot, fetch the record and verify:
+When the operator explicitly asks to edit a specific application, fetch the record and verify:
 
 ```bash
 curl -s -H "Authorization: Bearer $KIT_API_KEY" \
@@ -130,10 +116,13 @@ confirmation.
 > destroying the merchant's data. This ownership check rule was added
 > to prevent a repeat.
 
-When asked to onboard a new merchant: call kit_list_test_apps, take
-the OLDEST free slot (is_recycled_test_slot=true, status='New'),
-verify ownership per the rule above, then overwrite all fields.
-Only POST a brand-new application when the pool has ZERO free slots. Applications cannot be deleted manually — only
+When asked to onboard a new merchant: POST a new application
+(`POST /boarding-application` with `{"campaign":{"id":1579}}`),
+then fill it with the merchant's data. Never reuse an existing slot
+for a new merchant.
+
+When asked to edit an existing application: fetch it, run the
+ownership check above, then PUT the updated fields. Applications cannot be deleted manually — only
 the processor purges them periodically — so a free slot will almost
 always exist.
 
