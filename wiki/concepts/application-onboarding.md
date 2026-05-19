@@ -192,12 +192,14 @@ is set by the operator in the dashboard UI.
 
 Parse all uploaded documents first, then classify:
 
-| Document phrasing | `company.type` | Principal title |
+| Document phrasing | `company.type` (API value) | Principal title |
 |---|---|---|
 | "Inc", "Corp", "Corporation" | `Corporation` | `CEO` |
 | "LLC" | `LLC` | `CEO` |
 | "Partnership", "LP", "LLP" | `Partnership` | `CEO` |
-| Sole proprietor / no entity suffix / owner name = company name | `SoleProprietorship` | `Owner` |
+| Sole proprietor / no entity suffix / owner name = company name | `Individual` | `Owner` |
+
+> ⚠️ API uses `"Individual"` for Sole Proprietorship — NOT `"SoleProprietorship"`. Sending the wrong value returns HTTP 422.
 
 **Sole Proprietor signals:**
 - EIN letter shows an individual's name (not a business entity name)
@@ -214,6 +216,43 @@ Parse all uploaded documents first, then classify:
 
 Don't guess from voided check footer alone — cross-check with EIN
 letter or seller permit for the definitive entity type.
+
+### Government ID — Passport, Immigrant Card, etc.
+
+Any government-issued photo ID (Driver License, US Passport, Immigrant ID / Green Card, State ID) is uploaded as document type 18 ("Driver License") and its number + expiration date go into the `driverLicense` fields of the principal. The `state` field can be omitted (`{"id": null}`) for passports since they have no state.
+
+### Blank check vs. Voided check
+
+A blank (unfilled) check is accepted as a voided check if it clearly shows the MICR line with routing and account numbers. No "VOID" stamp required.
+
+### Sole Proprietor — EIN equals SSN
+
+For `Individual` (Sole Proprietor) entities, use the owner's SSN as the `federalTaxId`. The form field "Federal Tax ID" may say "sole proprietorship" instead of a number — in that case use the SSN from Owner's Information.
+
+### API payload structure (verified)
+
+The correct PUT body nests fields differently from what the UI suggests:
+
+```json
+{
+  "dba": {"sameAsCompany": "No", "name": "...", "address": {...}},
+  "businessLocation": {"buildingType": "...", "buildingOwnership": "...", "areaZoned": "...", "squareFootage": "..."},
+  "customerServiceContact": {"phone": "...", "email": "..."},
+  "corporateContact": {"phone": "...", "email": "..."},
+  "processing": {
+    "banks": [{"type": "All", "routingNumber": "...", "accountNumber": "..."}],
+    "intendedUsage": {...},
+    "volumes": {...},
+    "sales": {...}
+  }
+}
+```
+
+Key differences from naive structure:
+- `"dba"` (object, not `"dbas"` array)
+- `"processing.banks"` (not top-level `"bankAccounts"`)
+- `"processing.intendedUsage"` (not top-level `"intendedUsage"`)
+- `"businessLocation"` at top level (not inside `"dba"`)
 
 ### KIT API ergonomics (verified the hard way)
 
