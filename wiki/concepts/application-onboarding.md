@@ -87,9 +87,12 @@ applications accumulates. Reuse them.
 > incident). This rule applies equally to test slots and real
 > onboardings.
 
-When asked to onboard a new merchant: take the oldest free pool entry,
-overwrite all fields. Only POST a brand-new application when the user
-explicitly says "create new application".
+When asked to onboard a new merchant: call kit_list_test_apps, take
+the OLDEST free slot (is_recycled_test_slot=true, status='New'),
+overwrite all fields. Only POST a brand-new application when the pool
+has ZERO free slots. Applications cannot be deleted manually — only
+the processor purges them periodically — so a free slot will almost
+always exist.
 
 ### Documents to attach
 
