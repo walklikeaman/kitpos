@@ -101,7 +101,13 @@ ONLY two document categories are uploaded to the application:
 | File type | Document type ID | Field on form |
 |---|---|---|
 | **Voided check** | 6 | "Voided Check" |
-| **Driver's License** (front, optionally back) | 18 | "Driver's License" |
+| **Driver's License / any govt ID** (passport, state ID, immigrant card) | 18 | "Driver's License" |
+
+**Each document must be uploaded as a separate file.** If the merchant
+sends a multi-page PDF (application + passport + check), extract each
+relevant page as its own PDF before uploading. Never upload a combined
+PDF that contains both documents at once — it attaches to both document
+types incorrectly.
 
 Other document categories — **never** attach to the application:
 - IRS EIN letter (CP575B / CP575A)
@@ -134,8 +140,12 @@ API: `POST /attachment/upload` (multipart) → `POST /boarding-application/{id}/
 - **Ownership:** 100% by default for single-member LLC and Sole Prop.
   **Multi-member LLC requires explicit ownership split** — see the
   detection rule below. Don't blindly set 100%.
-- **Nationality:** US (`{"id": 199}`) by default.
-- **Country (any address):** US (`{"id": 229}`).
+- **Nationality:** US (`{"id": 199}`) — always. All principals live in
+  the United States. Never set a foreign nationality.
+- **Country — company address:** `{"id": 229}` (US).
+- **Country — principal address:** `{"id": 199}` (US). Different lookup
+  table from company address. Using 229 for a principal shows Afghanistan
+  in the UI — always use 199 for principal addresses.
 - **Personal guarantee + signer + management:** `"Yes"` for the
   primary principal.
 
