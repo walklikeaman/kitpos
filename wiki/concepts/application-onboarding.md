@@ -56,13 +56,18 @@ The KIT API token cannot delete applications — only the underlying
 processor purges them periodically. So a pile of test/orphan
 applications accumulates. Reuse them.
 
-**Test-app pool (state as of 2026-05-10 — keep updated):**
+**Test-app pool (state as of 2026-05-19 — keep updated):**
 | App ID | Status | Notes |
 |---|---|---|
 | 758354 | Free (sanitised 2026-05-10) | "Test Company LLC" placeholder; document attachment 29351960 unlinked from this app — was a real DL/check that confused operators |
 | 756689 | Free (empty since creation) | minimal skeleton |
 | 756683 | Free | "Test Company LLC" placeholder |
 | 756692 | **In use — SMOKER FRIENDLY LIVERMORE** | started 2026-05-10 |
+| 764333 | Free (empty) | created by agent, never used |
+| 764195 | Free (empty) | created by agent, never used |
+| 764192 | Free (empty) | created by agent, never used |
+| 762713 | Free (sanitised 2026-05-19) | was "MT Electronics Inc" — invented name, real principal data; sanitised back to placeholder |
+| 762710 | Free (sanitised 2026-05-19) | was "MT Electronics Inc" — invented name, real principal data; sanitised back to placeholder |
 
 > ⚠️ When sanitising a test app, ALWAYS overwrite with the standard
 > placeholder ("Test Company LLC", EIN 111111111, address 123 Test
@@ -73,6 +78,14 @@ applications accumulates. Reuse them.
 > the app can see at a glance that it's not real. Real-looking data
 > in a test app actively harms — confused staff almost ran a real
 > processor flow on Minna Mart before this rule was set.
+
+> ⛔ NEVER invent any data field — company name, DBA, address,
+> EIN, SSN, routing/account number, phone, email, or any other
+> value. If it is not in the operator's documents or messages,
+> leave it blank and ask. Invented names like "MT Electronics Inc"
+> in test slots caused real confusion in the KIT Dashboard (2026-05-19
+> incident). This rule applies equally to test slots and real
+> onboardings.
 
 When asked to onboard a new merchant: take the oldest free pool entry,
 overwrite all fields. Only POST a brand-new application when the user
