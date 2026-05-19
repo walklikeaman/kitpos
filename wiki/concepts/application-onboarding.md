@@ -56,18 +56,23 @@ The KIT API token cannot delete applications — only the underlying
 processor purges them periodically. So a pile of test/orphan
 applications accumulates. Reuse them.
 
+**Agent ID reference:**
+- `agent.id = 146274` — our programmatic API token (kitpos-operator / kit-dashboard-merchant-data)
+- `agent.id = 11803` — Nikita's dashboard user account (manual or other agent)
+- Any other `agent.id` — unknown third party
+
 **Test-app pool (state as of 2026-05-19 — keep updated):**
-| App ID | Status | Notes |
-|---|---|---|
-| 758354 | Free (sanitised 2026-05-10) | "Test Company LLC" placeholder; document attachment 29351960 unlinked from this app — was a real DL/check that confused operators |
-| 756689 | Free (empty since creation) | minimal skeleton |
-| 756683 | Free | "Test Company LLC" placeholder |
-| 756692 | **In use — SMOKER FRIENDLY LIVERMORE** | started 2026-05-10 |
-| 764333 | Free (empty) | created by agent, never used |
-| 764195 | Free (empty) | created by agent, never used |
-| 764192 | Free (empty) | created by agent, never used |
-| 762713 | Free (sanitised 2026-05-19) | was "MT Electronics Inc" — invented name, real principal data; sanitised back to placeholder |
-| 762710 | Free (sanitised 2026-05-19) | was "MT Electronics Inc" — invented name, real principal data; sanitised back to placeholder |
+| App ID | agent.id | Status | Notes |
+|---|---|---|---|
+| 758354 | 11803 | Free (sanitised 2026-05-10) | "Test Company LLC" placeholder |
+| 756689 | 11803 | Free (empty since creation) | minimal skeleton |
+| 756683 | 11803 | Free | "Test Company LLC" placeholder |
+| 756692 | 11803 | **In use — SMOKER FRIENDLY LIVERMORE** | started 2026-05-10 |
+| 764333 | 146274 | Free (empty) | created by agent, never used |
+| 764195 | 146274 | Free (empty) | created by agent, never used |
+| 764192 | 146274 | Free (empty) | created by agent, never used |
+| 762713 | 146274 | **In use — AL-OMAIS MARKET** | onboarded 2026-05-19 |
+| 762710 | 146274 | Partial — MT Electronics Inc | data restored 2026-05-19; bank + docs missing — need new DL/check from merchant |
 
 > ⚠️ When sanitising a test app, ALWAYS overwrite with the standard
 > placeholder ("Test Company LLC", EIN 111111111, address 123 Test
@@ -87,10 +92,43 @@ applications accumulates. Reuse them.
 > incident). This rule applies equally to test slots and real
 > onboardings.
 
+### Application ownership check (MANDATORY before overwriting)
+
+Before overwriting **any** application slot, fetch the record and verify:
+
+```bash
+curl -s -H "Authorization: Bearer $KIT_API_KEY" \
+  "$KIT_API/boarding-application/$APP_ID" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+name = d.get('company', {}).get('name', '')
+agent_id = d.get('agent', {}).get('id')
+print(f'company.name={name!r}  agent.id={agent_id}')
+"
+```
+
+A slot is safe to reuse **only if both** conditions hold:
+- `company.name == "Test Company LLC"` (our standard placeholder)
+- `agent.id == 146274` (our programmatic API token)
+
+If `company.name != "Test Company LLC"` → **STOP.** Warn the operator
+that this slot has real data, and ask for explicit confirmation before
+doing anything.
+
+If `agent.id != 146274` → **STOP.** Warn that the application was
+created by a different user or agent, and ask for explicit confirmation.
+
+> **Root cause — MT Electronics incident (2026-05-19):** An agent
+> selected app 762710 as a "test slot" because the pool list showed
+> it as agent 146274, but its `company.name` was "MT Electronics Inc" —
+> a real in-progress onboarding. The agent silently overwrote all fields,
+> destroying the merchant's data. This ownership check rule was added
+> to prevent a repeat.
+
 When asked to onboard a new merchant: call kit_list_test_apps, take
 the OLDEST free slot (is_recycled_test_slot=true, status='New'),
-overwrite all fields. Only POST a brand-new application when the pool
-has ZERO free slots. Applications cannot be deleted manually — only
+verify ownership per the rule above, then overwrite all fields.
+Only POST a brand-new application when the pool has ZERO free slots. Applications cannot be deleted manually — only
 the processor purges them periodically — so a free slot will almost
 always exist.
 
@@ -219,7 +257,7 @@ Parse all uploaded documents first, then classify:
 
 **For Sole Proprietors:**
 - `company.name` = owner's full legal name (no separate business entity)
-- `company.type` = `SoleProprietorship`
+- `company.type` = `Individual` (NOT `SoleProprietorship` — wrong value returns HTTP 422)
 - `principal.title` = `Owner` (not CEO)
 - EIN may be same as SSN — flag as warning but proceed
 - No separate DBA needed unless merchant operates under a trade name
