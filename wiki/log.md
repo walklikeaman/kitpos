@@ -8,6 +8,20 @@ Tip: `grep "^## \[" log.md | tail -10` shows recent activity.
 
 ---
 
+## [2026-05-19] ingest | Al-Omais Market onboarding + rule harvest
+
+First live onboarding via Claude Code API skill (no browser). Merchant: Raihanah Alomais / Al-Omais Market,
+Sole Proprietor, San Francisco CA. App 762713 filled and validated. New rules discovered and codified:
+- API type `"Individual"` (not `"SoleProprietorship"`) for sole prop
+- Principal address country = 199 (not 229 — 229 shows Afghanistan in UI)
+- Sole Prop EIN = SSN
+- Any govt ID (passport, immigrant card) → DL fields, type 18 upload
+- Blank check accepted as voided check
+- Multi-page PDF must be split per document before upload
+- `processing.banks[]` (not top-level `bankAccounts`); `"dba"` object (not `"dbas"` array)
+- Founded date fallback = 1st of current month (not passport issue date)
+Pages updated: `concepts/application-onboarding.md`, `wiki/log.md`.
+
 ## [2026-05-19] lint | test-app pool update + no-fabrication rule
 
 Sanitised apps 762713 and 762710 (were "MT Electronics Inc" with real principal data — invented name incident).
